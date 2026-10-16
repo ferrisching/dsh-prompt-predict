@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 用例自带假 ctx 与本地 HTTP server，不需要 DSH 运行时
+      - name: Run tests
+        run: node test/predict.mjs
+
+      - name: Check shell script syntax
+        run: bash -n scripts/install.sh

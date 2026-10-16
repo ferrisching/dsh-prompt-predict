@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+*.log
+
+# 打包产物（scripts/install.sh 现场生成，不入库）
+*.tgz
+dist/
+
+# 凭据永不入仓
+.npmrc

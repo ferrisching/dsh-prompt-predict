@@ -1,0 +1,53 @@
+{
+  "name": "dsh-prompt-predict",
+  "version": "0.1.0",
+  "description": "Codex-style composer predictions for DeepSeek Harness: suggest the user's next prompt after each reply and accept it with Tab.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": "./client/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "client",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test/predict.mjs",
+    "pack": "pnpm pack"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ferrisching/dsh-prompt-predict.git"
+  },
+  "homepage": "https://github.com/ferrisching/dsh-prompt-predict#readme",
+  "bugs": {
+    "url": "https://github.com/ferrisching/dsh-prompt-predict/issues"
+  },
+  "author": "ferrisching",
+  "license": "MIT",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "prompt-prediction",
+    "composer",
+    "ghost-text"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
