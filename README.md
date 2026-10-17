@@ -70,6 +70,20 @@ Replace `--profile` with your own profile (usually `desktop` on the desktop app,
 
 > You'll find the switch and all parameters under **Settings → Prompt Suggestions**.
 
+### Install from a release tarball
+
+Every [release](https://github.com/ferrisching/dsh-prompt-predict/releases) carries the exact
+tarball that is on npm (`shasum` matches the registry), which is handy for offline machines or for
+pinning an artifact you can verify:
+
+```bash
+gh release download v0.2.1 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.1.tgz
+```
+
+Same caveat as the CLI route above: add `"dsh-prompt-predict"` to `dsh.profile.bundles` yourself,
+or run `scripts/install.sh` instead.
+
 ### Install from source
 
 ```bash
