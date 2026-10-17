@@ -54,15 +54,20 @@
 
 **图形界面**：打开插件页 →「添加插件」→ 填入包名 `dsh-prompt-predict` → 安装。
 
-**或者用 dsh CLI**：
+**或者用 dsh CLI**——想装某个已发布版本就用 pnpm 的 `@版本` 语法：
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.1
 ```
 
-`--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`）。两条路都是从 npm 拉取；**装完重启 DSH 生效**。
+`--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`），**装完重启 DSH 生效**。
 
-> 装完在 **设置 → 提示词联想** 里能看到开关与各项参数。若装完没生效，用下面的 `scripts/install.sh` 再跑一次补接线（幂等，可重复执行）。
+> ⚠️ **CLI 只负责装包。** DSH 只有在 `~/.dsh/profiles/<profile>/package.json` 的
+> `dsh.profile.bundles` 里也列出该插件时才会加载它。实测：包装了但不在该列表里，插件路由返回 `404`，
+> 什么都不会加载。上面的图形界面路径会替你处理；用 CLI 的话请自己把 `"dsh-prompt-predict"` 加进该数组，
+> 或直接跑下面的 `scripts/install.sh`——它两步都做。
+
+> 装完在 **设置 → 提示词联想** 里能看到开关与各项参数。
 
 ### 从源码安装
 

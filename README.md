@@ -54,15 +54,21 @@ The plugin is published on npm. Options are ordered by convenience.
 
 **GUI**: open the plugins page → **Add plugin** → enter the package name `dsh-prompt-predict` → install.
 
-**Or the dsh CLI**:
+**Or the dsh CLI** — pin any published version with pnpm's `@version` syntax:
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.1
 ```
 
-Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build). Both routes pull from npm; **restart DSH afterwards**.
+Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build), then **restart DSH**.
 
-> You'll find the switch and all parameters under **Settings → Prompt Suggestions**. If the plugin doesn't show up, re-run `scripts/install.sh` below to wire it up (idempotent).
+> ⚠️ **The CLI only installs the package.** DSH loads a plugin only when it is also listed in
+> `dsh.profile.bundles` inside `~/.dsh/profiles/<profile>/package.json`. Verified: with the package
+> installed but not in that list, the plugin's routes answer `404` and nothing loads. The GUI route
+> above handles it for you; with the CLI add `"dsh-prompt-predict"` to that array yourself, or just
+> run `scripts/install.sh` below, which does both steps.
+
+> You'll find the switch and all parameters under **Settings → Prompt Suggestions**.
 
 ### Install from source
 
