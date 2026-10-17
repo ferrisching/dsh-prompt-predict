@@ -6,7 +6,7 @@
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-prompt-predict" /></a>
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-prompt-predict" /></a>
   <a href="https://github.com/ferrisching/dsh-prompt-predict/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/ferrisching/dsh-prompt-predict" /></a>
-  <img alt="已验证 DSH 0.2.0-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2-4d6bfe" />
+  <img alt="已验证 DSH 0.2.1-rc.1" src="https://img.shields.io/badge/DSH-0.2.1--rc.1-4d6bfe" />
   <img alt="零运行时依赖" src="https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-%E9%9B%B6%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-41ba41" />
   <img alt="客户端 + Host 双端插件" src="https://img.shields.io/badge/%E5%BD%A2%E6%80%81-Host%20%2B%20%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%8F%92%E4%BB%B6-8250df" />
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
@@ -98,7 +98,7 @@ pnpm add /path/to/dsh-prompt-predict
 
 ### 安装要求
 
-- 已在 **DSH `0.2.0-rc.2`** 上验证（桌面端）
+- 已在 **DSH `0.2.1-rc.1`** 上验证（Web 构建；桌面端跑的是同一套 host 与 client 代码）
 - `node` / `pnpm`：安装脚本优先使用 `~/.dsh/dsh-runtimes/*/dependencies` 下 DSH 自带的运行时，找不到才回退 `PATH`
 - macOS / Linux；Windows 未验证
 
@@ -208,7 +208,7 @@ npm test        # 66 项：51 项 Host 端 + 15 项客户端渲染冒烟
 
 ## ⚠️ 已知限制
 
-- 仅在 DSH `0.2.0-rc.2` 上验证过，其它版本未测
+- 仅在 DSH `0.2.1-rc.1` 上验证过，其它版本未测
 - 依赖宿主的 `conversation.composer.dock` 与 `settings.section` 两个 slot 名称，DSH 大版本调整后可能需要适配
 - 联想会消耗所选模型的额度；固定到快速小模型比跟随推理模型更省
 
