@@ -29,17 +29,27 @@ done
 run_pnpm(){ if [ -n "$PNPM_BIN" ]; then "$NODE_BIN" "$PNPM_BIN" "$@"; else pnpm "$@"; fi; }
 
 export npm_config_cache="${TMPDIR:-/tmp}/dsh-npm-cache"; mkdir -p "$npm_config_cache"
-WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+
+# ⚠️ 打包目标必须是 profile 内的**持久**目录，并且用**相对路径** add。
+# 早先的版本打到 mktemp 临时目录、再 pnpm add 绝对路径，profile 的 package.json 就会记成
+#   "dsh-prompt-predict": "file:/var/folders/…/T/tmp.xxxx/dsh-prompt-predict-0.2.1.tgz"
+# 临时目录一清，这个依赖就悬空——之后任何 pnpm install 都会整盘失败（实测 ENOENT，退出码 254）。
+PKG_DIR="$PROFILE/local-packages"; mkdir -p "$PKG_DIR"
 
 say "正在打包 $REPO_DIR …"
-( cd "$REPO_DIR" && run_pnpm pack --pack-destination "$WORK" >/dev/null )
-TGZ="$(ls -1 "$WORK"/dsh-prompt-predict-*.tgz 2>/dev/null | sort | tail -1 || true)"
-[ -n "$TGZ" ] || fail "打包失败：$WORK 下没有生成 tgz"
+( cd "$REPO_DIR" && run_pnpm pack --pack-destination "$PKG_DIR" >/dev/null )
+TGZ="$(ls -1 "$PKG_DIR"/dsh-prompt-predict-*.tgz 2>/dev/null | sort -V | tail -1 || true)"
+[ -n "$TGZ" ] || fail "打包失败：$PKG_DIR 下没有生成 tgz"
 
-say "安装包：$(basename "$TGZ")"
+# 只保留当前这一个 tarball，别让历史版本越积越多
+TGZ_NAME="$(basename "$TGZ")"
+find "$PKG_DIR" -maxdepth 1 -name 'dsh-prompt-predict-*.tgz' ! -name "$TGZ_NAME" -delete 2>/dev/null || true
+
+say "安装包：${TGZ_NAME}（持久保存在 ${PKG_DIR}）"
 cd "$PROFILE"; say "正在安装…"
 run_pnpm remove dsh-prompt-predict >/dev/null 2>&1 || true
-run_pnpm add "$TGZ" >/dev/null 2>&1 || run_pnpm add "$TGZ" || fail "pnpm add 失败"
+run_pnpm add "./local-packages/$TGZ_NAME" >/dev/null 2>&1 \
+  || run_pnpm add "./local-packages/$TGZ_NAME" || fail "pnpm add 失败"
 
 DST="$PROFILE/node_modules/dsh-prompt-predict"
 [ -d "$DST" ] || fail "安装后找不到 $DST"
