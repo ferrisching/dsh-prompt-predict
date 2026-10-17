@@ -69,6 +69,19 @@ dsh plugin --profile desktop add dsh-prompt-predict@0.2.1
 
 > 装完在 **设置 → 提示词联想** 里能看到开关与各项参数。
 
+### 从 release 的 tarball 安装
+
+每个 [release](https://github.com/ferrisching/dsh-prompt-predict/releases) 都附了与 npm 上
+**完全一致**的 tarball（`shasum` 与 registry 相同），适合离线机器或需要自行校验产物的场景：
+
+```bash
+gh release download v0.2.1 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.1.tgz
+```
+
+与上面 CLI 路径同样的注意点：请自己把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles`，
+或改用 `scripts/install.sh`。
+
 ### 从源码安装
 
 ```bash
