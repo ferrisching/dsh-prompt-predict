@@ -18,7 +18,7 @@ jobs:
 
       # 用例自带假 ctx 与本地 HTTP server，不需要 DSH 运行时
       - name: Run tests
-        run: node test/predict.mjs
+        run: npm test
 
       - name: Check shell script syntax
         run: bash -n scripts/install.sh

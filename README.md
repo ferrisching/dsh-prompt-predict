@@ -1,43 +1,70 @@
 # dsh-prompt-predict
 
 <div align="center">
-  <b>Codex 风格的输入框提示词联想</b><br />
-  助手回复结束后，把你的下一句话以灰色 ghost text 直接写进输入框 —— <b>Tab 采纳</b>、<b>Esc 忽略</b>、开始输入自动消失<br /><br />
+  <b>Codex-style composer predictions for DeepSeek Harness</b><br />
+  After each reply, your next prompt is ghosted right into the composer — <b>Tab to accept</b>, <b>Esc to dismiss</b>, start typing and it's gone<br /><br />
+  <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-prompt-predict" /></a>
+  <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-prompt-predict" /></a>
   <a href="https://github.com/ferrisching/dsh-prompt-predict/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/ferrisching/dsh-prompt-predict" /></a>
-  <img alt="version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-blue" />
-  <img alt="已验证 DSH 0.2.0-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2-4d6bfe" />
-  <img alt="零运行时依赖" src="https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-%E9%9B%B6%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-41ba41" />
-  <img alt="客户端 + Host 双端插件" src="https://img.shields.io/badge/%E5%BD%A2%E6%80%81-Host%20%2B%20%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%8F%92%E4%BB%B6-8250df" />
+  <img alt="Verified on DSH 0.2.0-rc.2" src="https://img.shields.io/badge/DSH-0.2.0--rc.2-4d6bfe" />
+  <img alt="Zero runtime dependencies" src="https://img.shields.io/badge/dependencies-zero%20runtime-41ba41" />
+  <img alt="Host + client plugin" src="https://img.shields.io/badge/shape-host%20%2B%20client-8250df" />
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
 </div>
 
-`dsh-prompt-predict` 是一个 [DeepSeek Harness](https://www.deepseek.com/) 插件：每轮助手回复结束后，它根据当前会话预测你**下一句最可能输入什么**，并以灰色 ghost text 的形式浮在输入框里。整条建议不写进编辑器，只有按下 `Tab` 采纳时才真正插入（可撤销），因此误预测零成本。
+<div align="center">
+  🌏 <a href="./README.zh.md">中文</a> · <b>English</b>
+</div>
 
-## 📑 目录
+<div align="center">
+  <img alt="Preview: after each reply a gray suggestion appears; ↻ for another one, Alt+→ to accept piece by piece, Tab to accept" src="https://raw.githubusercontent.com/ferrisching/dsh-prompt-predict/main/docs/demo.gif" width="760" />
+</div>
 
-- [✨ 功能一览](#-功能一览)
-- [🚀 安装](#-安装)
-- [⌨️ 使用](#-使用)
-- [⚙️ 设置](#-设置)
-- [🔌 HTTP 接口](#-http-接口)
-- [🧩 工作原理](#-工作原理)
-- [🛠️ 开发](#-开发)
-- [🔐 安全与成本](#-安全与成本)
-- [⚠️ 已知限制](#-已知限制)
-- [📄 许可](#-许可)
+`dsh-prompt-predict` is a [DeepSeek Harness](https://www.deepseek.com/) plugin: after every assistant turn it predicts **the message you are most likely to type next** and floats it into the composer as gray ghost text. The suggestion never enters the editor — only pressing `Tab` inserts it, and even then it stays undoable — so a wrong prediction costs you nothing.
 
-## ✨ 功能一览
+## 📑 Table of Contents
 
-- **回复结束即出建议**：在输入框首字符处浮出灰色 ghost text，光标位置、字号、行高都对齐当前编辑器
-- **三种交互**：`Tab` 采纳 · `Esc` 忽略 · 开始输入自动消失；采纳前建议不属于会话内容
-- **轻量上下文**：只取最近若干条 user/assistant 的纯文本，工具结果、附件、系统提示一律不进辅助调用
-- **默认跟随当前会话模型**：不写死任何提供商，联想调用沿用会话自身选用的模型；也可以在设置页固定到某个更便宜的模型
-- **全部可调**：开关、提供商 / 模型、响应超时、上下文规模、思考深度，保存后立即生效，无需重启 DSH
-- **零运行时依赖**：纯 ESM，Host 端与客户端都不引入第三方包
+- [✨ Features](#-features)
+- [🚀 Installation](#-installation)
+- [⌨️ Usage](#-usage)
+- [⚙️ Settings](#-settings)
+- [🔌 HTTP API](#-http-api)
+- [🧩 How it works](#-how-it-works)
+- [🛠️ Development](#-development)
+- [🔐 Security and cost](#-security-and-cost)
+- [⚠️ Known limitations](#-known-limitations)
+- [📄 License](#-license)
 
-## 🚀 安装
+## ✨ Features
 
-### 从源码安装（推荐）
+- **A suggestion the moment a reply ends** — gray ghost text rendered at the composer's first character, matching the editor's caret position, font size and line height
+- **Four interactions** — `Tab` to accept, `Alt+→` to accept piece by piece, `↻` for a different suggestion, `Esc` to dismiss; typing hides it, and clearing the draft brings it back
+- **Lightweight context** — only the most recent user/assistant *text*; tool results, attachments and system prompts never leave your machine
+- **Follows the current session model by default** — nothing is hard-coded to a provider, the prediction call reuses whatever model the session itself uses; you can also pin a cheaper model
+- **No repeats, no dead ends** — a repeat of the previous suggestion triggers an automatic "give me a different one"; a reasoning level the real model doesn't support falls back automatically, so you never hit "settings look fine but no suggestion ever appears"
+- **Everything is adjustable** — on/off, provider / model, response timeout, context size and budget, output cap, reasoning effort; changes apply immediately, no DSH restart
+- **The UI follows your language** — switch Settings → Language to 中文 and the whole plugin UI changes at once, including the ghost hint above the composer **and the validation errors inside Settings** (those are produced by the host, which answers in the language the client sends); no reload needed, and it falls back to Chinese when no locale service is present
+- **Zero runtime dependencies** — plain ESM on both the host and client side
+
+## 🚀 Installation
+
+The plugin is published on npm. Options are ordered by convenience.
+
+### Install inside DSH (recommended)
+
+**GUI**: open the plugins page → **Add plugin** → enter the package name `dsh-prompt-predict` → install.
+
+**Or the dsh CLI**:
+
+```bash
+dsh plugin --profile desktop add dsh-prompt-predict
+```
+
+Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build). Both routes pull from npm; **restart DSH afterwards**.
+
+> You'll find the switch and all parameters under **Settings → Prompt Suggestions**. If the plugin doesn't show up, re-run `scripts/install.sh` below to wire it up (idempotent).
+
+### Install from source
 
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
@@ -45,126 +72,145 @@ cd dsh-prompt-predict
 bash scripts/install.sh
 ```
 
-脚本会现场打包本仓库、装进 profile 的 `node_modules`，并把 `dsh-prompt-predict` 接进 `dsh.profile.bundles`。默认目标是 `~/.dsh/profiles/desktop`，装别的 profile：
+The script packs this repo on the fly, installs it into the profile's `node_modules`, and adds `dsh-prompt-predict` to `dsh.profile.bundles`. The default target is `~/.dsh/profiles/desktop`; for another profile:
 
 ```bash
 bash scripts/install.sh ~/.dsh/profiles/web
 ```
 
-**装完重启 DSH 生效**，然后在 **设置 → 提示词联想** 里能看到开关与各项参数。
+**Restart DSH afterwards**, then look under **Settings → Prompt Suggestions**.
 
-### 手动安装
+### Manual install
 
 ```bash
 cd ~/.dsh/profiles/desktop
+pnpm add dsh-prompt-predict              # from npm
+# or link local source (symlink — handy while developing):
 pnpm add /path/to/dsh-prompt-predict
 ```
 
-再打开该 profile 的 `package.json`，把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles` 数组，重启 DSH。
+Then open that profile's `package.json` and add `"dsh-prompt-predict"` to the `dsh.profile.bundles` array, and restart DSH.
 
-> `pnpm add <仓库目录>` 装的是符号链接，指向你的工作区，适合边改边调；`scripts/install.sh` 装的是打包副本。
+### Requirements
 
-### 安装要求
+- Verified on **DSH `0.2.0-rc.2`** (desktop)
+- `node` / `pnpm`: the install script prefers DSH's own runtime under `~/.dsh/dsh-runtimes/*/dependencies` and only falls back to `PATH`
+- macOS / Linux; Windows untested
 
-- 已在 **DSH `0.2.0-rc.2`** 上验证（桌面端）
-- `node` / `pnpm`：安装脚本优先使用 `~/.dsh/dsh-runtimes/*/dependencies` 下 DSH 自带的运行时，找不到才回退 `PATH`
-- macOS / Linux；Windows 未验证
+## ⌨️ Usage
 
-## ⌨️ 使用
+1. Chat normally, wait for the assistant to finish its turn, and leave the **composer empty**
+2. About 350 ms later a gray suggestion appears, with `Tab` / `↻` / `Esc` on its right
+3. Pick what you need:
 
-1. 正常对话，等助手这一轮回复结束，且**输入框为空**
-2. 约 350 ms 后，输入框里浮出一条灰色建议
-3. 想用就按 `Tab`（建议此刻才插入输入框，可撤销）；不想用按 `Esc`，或直接开始打字，建议自动消失
+| Action | Effect |
+|---|---|
+| `Tab` | Accept the whole thing (only now is it inserted, and it stays undoable) |
+| `Alt+→` | **Accept piece by piece** — a couple of characters at a time in CJK, one word in Latin; the rest keeps floating, stop whenever you like |
+| `↻` (button on the right) | **Reroll** — ask the model for a different suggestion |
+| `Esc` | Dismiss this one |
+| Just start typing | It disappears; **clearing the draft brings it back** (only `Esc` is a permanent dismissal) |
 
-建议只在输入框为空、且当前会话不在运行中时出现；切换会话、中断回复都会清掉旧建议。
+Suggestions only appear when the composer is empty and the session isn't running. Switching sessions or interrupting a reply clears any pending suggestion.
 
-## ⚙️ 设置
+## ⚙️ Settings
 
-**设置 → 提示词联想**：
+**Settings → Prompt Suggestions**:
 
-| 设置项 | 说明 | 默认 |
+| Setting | Description | Default |
 |---|---|---|
-| 启用联想 | 总开关 | 开 |
-| 提供商 / 模型 | 联想调用使用的模型；选「跟随当前会话模型」则沿用会话自身模型 | 跟随当前会话模型 |
-| 响应超时（高级） | 1–60 秒 | 12 秒 |
-| 上下文规模（高级） | 少 3 条 / 标准 8 条 / 多 12 条 | 标准 8 条 |
-| 思考深度（高级） | 选项**按所选模型动态生成**，模型不支持的档位不会出现 | 关闭（最快最省） |
+| Enable predictions | Master switch | On |
+| Provider / model | Model used for the prediction call; pick "Follow current session model" to reuse the session's own model | Follow current session model |
+| Response timeout (advanced) | 1–60 seconds | 12 seconds |
+| Context size (advanced) | Small 3 / Standard 8 / Large 12 messages | Standard 8 |
+| Context budget (advanced) | Character cap sent to the helper call, 1000–20000 | 6000 |
+| Output cap (advanced) | Token cap per suggestion, 16–512 | 64 |
+| Reasoning effort (advanced) | Options are **generated from the model actually in use** (the session's model when following it); unsupported levels never appear | Off (fastest, cheapest) |
 
-- 保存后**立即生效**，无需重启 DSH
-- 设置落盘在 `~/.dsh/dsh-prompt-predict/config.json`（权限 600）
-- 优先级：**用户保存的设置 > cordis patch 部署默认 > 内置默认**
+The bottom of the settings page shows a **last prediction** line: time, model, latency, whether the reasoning level was auto-downgraded or a reroll happened, and the reason when it failed — no more guessing why nothing appeared.
 
-## 🔌 HTTP 接口
+- Changes take effect **immediately** — no DSH restart
+- Settings are stored at `~/.dsh/dsh-prompt-predict/config.json` (mode 600)
+- Precedence: **user-saved settings > cordis patch deploy defaults > built-in defaults**
 
-插件在 DSH 的 Web 服务上注册同源前缀路由 `/dsh-prompt-predict`，设置页与输入框联想都走它。所有接口都经 DSH 浏览器 Cookie 认证（`connection.requestRejection`），非本机浏览器调用会拿到 401/403。
+## 🔌 HTTP API
 
-| 方法 | 路径 | 说明 |
+The plugin registers a same-origin prefix route `/dsh-prompt-predict` on DSH's web server; both the settings page and the composer suggestion go through it. Every endpoint is authenticated with DSH's browser cookie (`connection.requestRejection`) — off-machine callers get 401/403.
+
+| Method | Path | Description |
 |---|---|---|
-| GET | `/dsh-prompt-predict/status` | 当前会话模型、有效设置、已保存项、部署默认 |
-| GET | `/dsh-prompt-predict/catalog` | 全部 provider 与模型（供下拉选择） |
-| GET | `/dsh-prompt-predict/efforts?provider=&model=` | 该模型真实支持的思考档位 |
-| POST | `/dsh-prompt-predict/settings` | 保存设置；`{ "reset": true }` 恢复默认 |
-| POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → 一条建议 |
+| GET | `/dsh-prompt-predict/status` | Current session model, effective settings, saved overrides, deploy defaults |
+| GET | `/dsh-prompt-predict/catalog` | All providers and models (for the dropdowns) |
+| GET | `/dsh-prompt-predict/efforts?provider=&model=` | The reasoning levels that model actually supports |
+| POST | `/dsh-prompt-predict/settings` | Save settings; `{ "reset": true }` restores defaults |
+| POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → one suggestion |
 
-## 🧩 工作原理
+Every endpoint accepts an optional **`x-dsh-locale`** header (`zh` / `en`, default Chinese) deciding which language validation errors and prediction failures come back in. The client sends the active UI language automatically.
 
-**Host 端**（`lib/`）
+## 🧩 How it works
 
-1. `lib/index.js` 作为插件入口注册同源 HTTP 路由
-2. 收到 `suggest` 后，`lib/predict.mjs` 从会话里裁出最近的 user/assistant 纯文本——按条数上限和字符预算从后往前取
-3. 裁剪结果被**帧化成一条 request-only 的 user 输入**再发给辅助模型：DSH 的 Assistant Message 必须带完整 `stream` / `replayState`，不能拿裁剪片段伪装成助手消息（与 session-title 的做法一致）
-4. 流式收回的文本经归一化（剥掉代码块包装、`建议：` 前缀、成对引号，合并换行）后返回给客户端
+**Host side** (`lib/`)
 
-模型选择上，`provider` / `model` 为 `auto` 表示跟随会话；此时不向辅助调用写死路由，由 `predictNextPrompt` 继承会话自身选用的模型。
+1. `lib/index.js` is the plugin entry point and registers the same-origin HTTP route
+2. On `suggest`, `lib/predict.mjs` trims the session down to the most recent user/assistant plain text — walking backwards under both a message-count limit and a character budget
+3. That trimmed history is **framed as a single request-only user input** before it reaches the helper model: DSH assistant messages must carry a full `stream` / `replayState`, so a trimmed fragment cannot masquerade as one (same approach session-title uses)
+4. The streamed reply is normalized (code fences, `Suggestion:` prefixes and wrapping quotes stripped, newlines collapsed) and returned to the client
 
-**客户端**（`client/`）
+For model selection, `provider` / `model` set to `auto` means "follow the session": no route is hard-coded onto the helper call, and `predictNextPrompt` inherits whatever the session itself selected.
 
-- 注入 `conversation.composer.dock`（输入框旁的生命周期挂载点）与 `settings.section`（设置页分区）两个 slot
-- ghost text 是一层**覆盖层**，不写进 Lexical 编辑器；只有采纳时才通过 `inputActions.insertText` 真正插入
+**Client side** (`client/`)
 
-## 🛠️ 开发
+- Injects into the `conversation.composer.dock` (lifecycle mount point next to the composer) and `settings.section` slots
+- The ghost text is an **overlay** — it is never written into the Lexical editor; only accepting goes through `inputActions.insertText`
+
+## 🛠️ Development
 
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-node test/predict.mjs      # 31 项：文本裁剪、建议清洗、路由继承、设置校验、接口端到端
+npm test        # 66 cases: 51 host-side + 15 client render smoke tests
 ```
 
 ```
 .
-├── lib/                 Host 端（纯 ESM，无构建步骤）
-│   ├── index.js         插件入口，注册 HTTP 路由
-│   ├── host-route.mjs   同源接口：状态 / 模型目录 / 思考档位 / 设置 / 建议
-│   ├── predict.mjs      会话裁剪、调用辅助模型、建议归一化
-│   └── config.mjs       用户设置持久化
+├── lib/                 Host side (plain ESM, no build step)
+│   ├── index.js         Plugin entry point, registers the HTTP route
+│   ├── host-route.mjs   Same-origin API: status / catalog / efforts / settings / suggest
+│   ├── predict.mjs      Session trimming, helper-model call, suggestion normalization
+│   ├── messages.mjs     User-facing host copy (Chinese + English)
+│   └── config.mjs       User settings persistence
 ├── client/
-│   └── client.js        客户端：输入框 ghost text 覆盖层 + 设置页
+│   └── client.js        Client: composer ghost-text overlay + settings page
 ├── test/
-│   └── predict.mjs      31 项用例
+│   ├── predict.mjs      51 cases: trimming, cleanup, route inheritance, settings validation, degrade-retry, dedup, bilingual errors, HTTP end-to-end
+│   └── client-render.mjs  15 cases: renders the ghost overlay and settings page through a tiny React stand-in, incl. both locales and dictionary self-checks
 ├── scripts/
-│   └── install.sh       一键安装 / 升级
-├── cordis.patch.yml     插件挂载补丁
+│   └── install.sh       One-shot install / upgrade
+├── cordis.patch.yml     Plugin mount patch
 └── package.json
 ```
 
-测试不依赖 DSH 运行时：用假 ctx 与本地 HTTP server 覆盖路由注册、设置校验、路由继承与端到端调用。
+> `test/client-render.mjs` is the only automated safety net for the client side: no browser needed — a tiny React stand-in expands the components into a plain object tree so the test can assert that the ghost shows up and that `Tab` / `↻` / `Esc` are all there. It exists because of a real incident: the overlay referenced a variable it never read from props, the render threw, React's error boundary swallowed it, and the symptom was "the API returns a suggestion but nothing ever appears" — while every host-side test was green.
 
-## 🔐 安全与成本
+The tests need no DSH runtime: a fake ctx plus a local HTTP server cover route registration, settings validation, route inheritance and end-to-end calls.
 
-- 每轮助手回复最多产生**一次**小额辅助调用，默认 `maxTokens: 64`
-- 建议**不写入会话日志**；只有按 `Tab` 采纳并发送后才成为正式消息
-- 只发送裁剪后的 user/assistant 纯文本，工具结果、附件、系统提示都不出本机
-- 设置页与联想接口均走 DSH 自身的浏览器 Cookie 认证
+## 🔐 Security and cost
 
-## ⚠️ 已知限制
+- **One** small helper call per assistant turn by default (`maxTokens: 64`); an extra attempt only happens when the reasoning level needs downgrading or a suggestion needs rerolling — **three calls is the hard ceiling**, and they share a single timeout budget
+- Suggestions are **not written to the session log**; only after you accept with `Tab` and send does the text become a real message
+- Only trimmed user/assistant plain text is sent — tool results, attachments and system prompts never leave the machine
+- Both the settings page and the suggestion endpoint sit behind DSH's own browser-cookie authentication
 
-- 仅在 DSH `0.2.0-rc.2` 上验证过，其它版本未测
-- 依赖宿主的 `conversation.composer.dock` 与 `settings.section` 两个 slot 名称，DSH 大版本调整后可能需要适配
-- **尚未发布到 npm 官方源**，因此暂时无法通过 DSH 的「添加插件」向导安装，只能用上面的源码安装方式
-- 联想会消耗所选模型的额度；固定到快速小模型比跟随推理模型更省
+## ⚠️ Known limitations
 
-## 📄 许可
+- Verified only on DSH `0.2.0-rc.2`; other versions untested
+- Depends on the host's `conversation.composer.dock` and `settings.section` slot names — a major DSH update may require adapting
+- Predictions consume quota on the selected model; pinning a fast small model is cheaper than following a reasoning model
+
+## 📄 License
 
 [MIT](LICENSE) © ferrisching
 
-可以自由使用、修改、分发，包括闭源商业项目；只需保留版权声明与许可证文本。
+Free to use, modify and distribute, including in closed-source commercial projects — just keep the copyright notice and license text.
+
+See [CHANGELOG.md](./CHANGELOG.md) for the change history ([中文](./CHANGELOG.zh.md)).
