@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, recentMessages, normalizeSuggestion, predictNextPrompt } from '../lib/predict.mjs';
 import { apply } from '../lib/index.js';
+import { makeT, normalizeLang, listSeparator } from '../lib/messages.mjs';
 
 // 设置写入走 DSH_HOME，测试必须隔离到临时目录，避免污染真实配置。
 process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'dsh-prompt-predict-test-'));
@@ -37,6 +38,9 @@ check('只保留最近 user/assistant', JSON.stringify(recent) === JSON.stringif
 check('清理建议包装', normalizeSuggestion('```text\n建议：继续完成安装并跑测试\n```') === '继续完成安装并跑测试', normalizeSuggestion('```text\n建议：继续完成安装并跑测试\n```'));
 
 let captured;
+let streamCalls = [];
+let failWhenEffort = false;
+let variant = 0;
 const fakeSession = {
   id: 'session-test',
   requestHeader: () => ({ config: { provider: 'provider-current', model: 'model-current' } }),
@@ -45,13 +49,28 @@ const fakeSession = {
     { role: 'assistant', content: [{ type: 'text', text: '技术验证通过，可以开始实现。' }] },
   ],
 };
+// 第二个会话专门用来测「去重 / reroll」：它们依赖「上一条建议」的记忆，用独立会话避免污染主流程
+const fakeSession2 = { ...fakeSession, id: 'session-dedupe' };
 const fakeCtx = {
   agentDefaultModel: { currentSelection: () => ({ provider: 'provider-default', model: 'model-default' }) },
   llm: {
     async *stream(options) {
       captured = options;
+      streamCalls.push(options);
+      // 模拟「档位不被模型支持」：带 reasoningEffort 就失败，用于验证降级重试
+      if (failWhenEffort && options.reasoningEffort) {
+        throw new Error('reasoning effort not supported by this model');
+      }
+      const prompt = options.messages?.[0]?.content?.[0]?.text ?? '';
+      // 带「必须给出」提示（去重 / reroll）时换一条（两个变体轮换，模拟「换了个说法」），
+      // 否则固定返回同一条 —— 用来制造「复读」以验证去重
+      let text = '"继续，直接实现并安装插件"';
+      if (/必须给出/.test(prompt)) {
+        variant += 1;
+        text = variant % 2 ? '"换个思路：先补测试再实现"' : '"先把边界情况列个清单"';
+      }
       yield { type: 'block-start', block: { type: 'text' } };
-      yield { type: 'text-delta', text: '"继续，直接实现并安装插件"' };
+      yield { type: 'text-delta', text };
       yield { type: 'finish', reason: 'stop' };
     },
     listProviders() {
@@ -84,7 +103,7 @@ let route;
 let cleaned = false;
 const cleanups = [];
 const ctx = {
-  sessions: { get: (id) => id === 'session-test' ? fakeSession : undefined },
+  sessions: { get: (id) => (id === 'session-test' ? fakeSession : id === 'session-dedupe' ? fakeSession2 : undefined) },
   llm: fakeCtx.llm,
   agentDefaultModel: fakeCtx.agentDefaultModel,
   connection: { requestRejection: () => undefined },
@@ -98,10 +117,12 @@ check('登记 effect 清理函数', cleanups.length === 1, String(cleanups.lengt
 const server = http.createServer((req, res) => route.handler(req, res));
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 const port = server.address().port;
-function request(path, method = 'GET', body) {
+function request(path, method = 'GET', body, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? null : JSON.stringify(body);
-    const r = http.request({ host: '127.0.0.1', port, path, method, headers: payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {} }, (res) => {
+    const headers = Object.assign({}, extraHeaders);
+    if (payload) { headers['content-type'] = 'application/json'; headers['content-length'] = Buffer.byteLength(payload); }
+    const r = http.request({ host: '127.0.0.1', port, path, method, headers }, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => resolve({ status: res.statusCode, json: JSON.parse(Buffer.concat(chunks).toString('utf8')) }));
@@ -175,6 +196,105 @@ const reset = await request('/dsh-prompt-predict/settings', 'POST', { reset: tru
 check('恢复默认清空保存项', reset.json.ok === true && Object.keys(reset.json.saved ?? {}).length === 0
   && reset.json.effective.provider === 'auto' && reset.json.effective.model === 'auto'
   && reset.json.effective.enabled === true, JSON.stringify(reset.json.effective));
+
+// ================= 会话模型 / 新设置项 / 降级重试 / 去重 / reroll =================
+
+const statusWithSession = await request('/dsh-prompt-predict/status?sessionId=session-test');
+check('status 带 sessionId 回传会话实际模型',
+  statusWithSession.json.sessionModel?.provider === 'provider-current'
+  && statusWithSession.json.sessionModel?.model === 'model-current',
+  JSON.stringify(statusWithSession.json.sessionModel));
+check('status 仍保留全局默认 current',
+  statusWithSession.json.current?.model === 'model-default', JSON.stringify(statusWithSession.json.current));
+
+const statusNoSession = await request('/dsh-prompt-predict/status');
+check('status 不带 sessionId 时 sessionModel 为 null',
+  statusNoSession.json.sessionModel === null, String(statusNoSession.json.sessionModel));
+
+const budget = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 8000, maxTokens: 128 });
+check('保存上下文预算与输出上限', budget.json.ok === true
+  && budget.json.effective.maxChars === 8000 && budget.json.effective.maxTokens === 128,
+  JSON.stringify({ maxChars: budget.json.effective?.maxChars, maxTokens: budget.json.effective?.maxTokens }));
+
+const badChars = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 10 });
+check('上下文预算越界被拒绝', badChars.json.ok === false && /上下文预算/.test(badChars.json.reason ?? ''), String(badChars.json.reason));
+
+const badTokens = await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 9999 });
+check('输出上限越界被拒绝', badTokens.json.ok === false && /输出上限/.test(badTokens.json.reason ?? ''), String(badTokens.json.reason));
+
+// 降级重试：档位不被真实模型支持时自动丢掉档位再试，否则用户只会看到「永远没有建议」
+await request('/dsh-prompt-predict/settings', 'POST', { provider: 'provider-effort', model: 'model-r', reasoningEffort: 'high' });
+streamCalls = [];
+failWhenEffort = true;
+const degraded = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
+failWhenEffort = false;
+check('档位不被支持时降级重试成功',
+  degraded.json.ok === true && degraded.json.effortDropped === true
+  && streamCalls[0]?.reasoningEffort === 'high' && streamCalls[1]?.reasoningEffort === undefined,
+  JSON.stringify({ ok: degraded.json.ok, dropped: degraded.json.effortDropped, calls: streamCalls.length }));
+
+// 去重：同一会话连续两轮拿到同一条时，要求模型换一条
+streamCalls = [];
+const dedupeFirst = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-dedupe' });
+const dedupeSecond = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-dedupe' });
+check('连续同一条建议触发去重重试',
+  dedupeFirst.json.suggestion === '继续，直接实现并安装插件'
+  && dedupeSecond.json.dedupRetry === true
+  && dedupeSecond.json.suggestion !== dedupeFirst.json.suggestion,
+  JSON.stringify({ first: dedupeFirst.json.suggestion, second: dedupeSecond.json.suggestion, dedup: dedupeSecond.json.dedupRetry }));
+check('去重提示确实进入模型请求',
+  streamCalls.some((c) => /必须给出/.test(c.messages?.[0]?.content?.[0]?.text ?? '')), '');
+
+// reroll：用户点「换一条」时首轮就带 avoid，必须给出不同的
+streamCalls = [];
+const rerolled = await request('/dsh-prompt-predict/suggest', 'POST', {
+  sessionId: 'session-dedupe', reroll: true, avoid: '换个思路：先补测试再实现',
+});
+check('reroll 首轮即要求换一条',
+  rerolled.json.ok === true
+  && rerolled.json.suggestion !== '换个思路：先补测试再实现'      // 最终结果与传入的 avoid 不同
+  && /必须给出/.test(streamCalls[0]?.messages?.[0]?.content?.[0]?.text ?? ''),  // 且是**首轮**就带了提示
+  JSON.stringify({ suggestion: rerolled.json.suggestion }));
+
+check('建议响应带耗时字段', typeof dedupeSecond.json.ms === 'number' && dedupeSecond.json.ms >= 0, String(dedupeSecond.json.ms));
+
+// ================= Host 端错误原因的双语 =================
+check('normalizeLang 归一化',
+  normalizeLang('en-US') === 'en' && normalizeLang('zh-CN') === 'zh'
+  && normalizeLang(['en-GB']) === 'en' && normalizeLang('') === 'zh' && normalizeLang('fr') === 'zh',
+  [normalizeLang('en-US'), normalizeLang('zh-CN'), normalizeLang('fr')].join('/'));
+check('listSeparator 跟着语言走', listSeparator('zh') === '、' && listSeparator('en') === ', ', '');
+check('makeT 插值', makeT('en')('err.modelUnknown', { provider: 'p', model: 'm' }) === 'Provider "p" has no model "m"',
+  makeT('en')('err.modelUnknown', { provider: 'p', model: 'm' }));
+
+const zhRange = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 10 }, { 'x-dsh-locale': 'zh' });
+const enRange = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 10 }, { 'x-dsh-locale': 'en' });
+check('校验错误按请求语言返回',
+  /上下文预算/.test(zhRange.json.reason ?? '') && /Context budget/.test(enRange.json.reason ?? ''),
+  `${zhRange.json.reason} | ${enRange.json.reason}`);
+
+const enTimeout = await request('/dsh-prompt-predict/settings', 'POST', { timeoutMs: 1 }, { 'x-dsh-locale': 'en' });
+check('超时越界错误英文化', /Timeout must be between/.test(enTimeout.json.reason ?? ''), String(enTimeout.json.reason));
+
+const enMissing = await request('/dsh-prompt-predict/suggest', 'POST', {}, { 'x-dsh-locale': 'en' });
+check('缺少 sessionId 英文化', /Missing sessionId/.test(enMissing.json.reason ?? ''), String(enMissing.json.reason));
+
+const enNotFound = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'nope' }, { 'x-dsh-locale': 'en' });
+check('Session 不存在英文化', /Session not found/.test(enNotFound.json.reason ?? ''), String(enNotFound.json.reason));
+
+// 预测内部的失败原因也要跟着语言走（这里用「没有会话文本」这条路径）
+const emptySession = { id: 'session-empty', deriveMessages: () => [] };
+const ctxEn = { ...fakeCtx, sessions: { get: () => emptySession } };
+let enPredictErr = '';
+try { await predictNextPrompt(ctxEn, emptySession, { t: makeT('en') }); } catch (e) { enPredictErr = String(e.message); }
+let zhPredictErr = '';
+try { await predictNextPrompt(ctxEn, emptySession, { t: makeT('zh') }); } catch (e) { zhPredictErr = String(e.message); }
+check('预测内部失败原因双语',
+  /No conversation text/.test(enPredictErr) && /没有可用于预测/.test(zhPredictErr),
+  `${zhPredictErr} | ${enPredictErr}`);
+
+const noHeader = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 10 });
+check('不带语言头时回落中文', /上下文预算/.test(noHeader.json.reason ?? ''), String(noHeader.json.reason));
 
 await new Promise((resolve) => server.close(resolve));
 for (const cleanup of cleanups) cleanup();
