@@ -213,4 +213,4 @@ npm test        # 66 项：51 项 Host 端 + 15 项客户端渲染冒烟
 
 可以自由使用、修改、分发，包括闭源商业项目；只需保留版权声明与许可证文本。
 
-变更记录见 [CHANGELOG.zh.md](./CHANGELOG.zh.md)（[English](./CHANGELOG.md)）。
+变更记录见 [CHANGELOG_zh.md](./CHANGELOG_zh.md)（[English](./CHANGELOG.md)）。

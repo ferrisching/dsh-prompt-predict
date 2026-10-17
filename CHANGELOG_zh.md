@@ -5,9 +5,15 @@
 
 [English](CHANGELOG.md)
 
-## [0.2.0] — 未发布
+## [0.2.1] — 2026-10-17
 
-> 代码已在 `main` 分支，尚未发布到 npm（npm 上仍是 `0.1.0`）。发布后本节会补上日期。
+### 修复
+
+- **npm 包页显示的是中文 README**。npm 按 glob 取第一个 `README.*` 匹配，而 `README.zh.md`
+  排序在 `README.md` 之前，于是中文版被选中。中文版改名 `README_zh.md` 后不再匹配
+  `{README,README.*}`，npm 必然选到英文的 `README.md`。取代 `0.2.0`，无代码改动。
+
+## [0.2.0] — 2026-10-17
 
 ### 新增
 
@@ -34,10 +40,10 @@
 
 ### 文档
 
-- 英文版升为主 `README.md`（中文移到 `README.zh.md`，两侧 11 节逐节对应并互链）
+- 英文版升为主 `README.md`（中文移到 `README_zh.md`，两侧 11 节逐节对应并互链）
 - README 补充「在 DSH 里安装」、npm 安装方式与徽章、四种交互说明、新设置项
 - 演示素材重录为含 `↻` / `Alt+→` 的新界面：`docs/demo.gif`、`docs/screenshot.png`、`docs/social-preview.png`
-- 本文件（`CHANGELOG.md` / `CHANGELOG.zh.md`）
+- 本文件（`CHANGELOG.md` / `CHANGELOG_zh.md`）
 
 ## [0.1.0] — 2026-10-17
 

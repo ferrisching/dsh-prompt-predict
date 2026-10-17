@@ -4,11 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the version numbers follow
 [Semantic Versioning](https://semver.org/).
 
-[中文](CHANGELOG.zh.md)
+[中文](CHANGELOG_zh.md)
 
-## [0.2.0] — Unreleased
+## [0.2.1] — 2026-10-17
 
-> The code is on `main`; it is not published to npm yet (npm still serves `0.1.0`). The date will be added here once released.
+### Fixed
+
+- **The npm package page rendered the Chinese README.** npm picks the first `README.*` match in
+  glob order, and `README.zh.md` sorts before `README.md`, so the Chinese file won. The Chinese
+  README is now `README_zh.md`, which npm's `{README,README.*}` pattern does not match, so
+  `README.md` (English) is always the one published. Supersedes `0.2.0`; no code changes.
+
+## [0.2.0] — 2026-10-17
 
 ### Added
 
@@ -35,10 +42,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Docs
 
-- English README is now the primary `README.md` (Chinese moved to `README.zh.md`, 11 sections each, cross-linked)
+- English README is now the primary `README.md` (Chinese moved to `README_zh.md`, 11 sections each, cross-linked)
 - README gained the in-DSH install route, npm install and badges, the four interactions, and the new settings
 - New demo assets: `docs/demo.gif`, `docs/screenshot.png`, `docs/social-preview.png`
-- This file (`CHANGELOG.md` / `CHANGELOG.zh.md`)
+- This file (`CHANGELOG.md` / `CHANGELOG_zh.md`)
 
 ## [0.1.0] — 2026-10-17
 
