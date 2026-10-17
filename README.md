@@ -13,7 +13,7 @@
 </div>
 
 <div align="center">
-  🌏 <a href="./README.zh.md">中文</a> · <b>English</b>
+  🌏 <a href="./README_zh.md">中文</a> · <b>English</b>
 </div>
 
 <div align="center">
@@ -213,4 +213,4 @@ The tests need no DSH runtime: a fake ctx plus a local HTTP server cover route r
 
 Free to use, modify and distribute, including in closed-source commercial projects — just keep the copyright notice and license text.
 
-See [CHANGELOG.md](./CHANGELOG.md) for the change history ([中文](./CHANGELOG.zh.md)).
+See [CHANGELOG.md](./CHANGELOG.md) for the change history ([中文](./CHANGELOG_zh.md)).
