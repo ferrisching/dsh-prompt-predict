@@ -277,9 +277,13 @@ window.__ModuleLoader__.load({
         if (!ed) { setPos(null); return; }
         var r = ed.getBoundingClientRect();
         var cs = getComputedStyle(ed);
+        // 宽度也照抄输入框的**内容区**：建议长的时候在原位折行，而不是被 60ch 截断成省略号。
+        var padLeft = parseFloat(cs.paddingLeft || "0") || 0;
+        var padRight = parseFloat(cs.paddingRight || "0") || 0;
         setPos({
-          left: r.left + parseFloat(cs.paddingLeft || "0"),
+          left: r.left + padLeft,
           top: r.top + parseFloat(cs.paddingTop || "0"),
+          width: r.width > 0 ? Math.max(80, r.width - padLeft - padRight) : 0,
           fontFamily: cs.fontFamily,
           fontSize: cs.fontSize,
           lineHeight: cs.lineHeight,
@@ -315,32 +319,39 @@ window.__ModuleLoader__.load({
         "data-prompt-predict-ghost": "true",
         style: {
           position: "fixed", left: pos.left, top: pos.top, zIndex: 60,
-          display: "flex", alignItems: "baseline", gap: 8, pointerEvents: "none",
+          width: pos.width || undefined,
+          pointerEvents: "none",
           fontFamily: pos.fontFamily, fontSize: pos.fontSize, lineHeight: pos.lineHeight, fontWeight: pos.fontWeight,
-          maxWidth: "min(70vw, 72ch)",
+          // 长建议在原位折行显示，完整可见；只有采纳才写进 Lexical。
+          color: "#9aa3b2", whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word",
         },
       },
         h("span", {
-          style: { color: "#9aa3b2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "60ch" },
+          style: { color: "#9aa3b2" },
         }, suggestion),
-        h("button", {
-          type: "button", onClick: onAccept,
-          title: tt(t, "ghost.acceptHint"),
-          style: {
-            pointerEvents: "auto", flex: "none", padding: "0 7px", height: 19, borderRadius: 5,
-            border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
-            color: "#9aa3b2", fontSize: 10, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer",
-          },
-        }, "Tab"),
-        h("button", {
-          type: "button", onClick: onReroll, title: tt(t, "ghost.reroll"),
-          style: {
-            pointerEvents: "auto", flex: "none", width: 19, height: 19, padding: 0, borderRadius: 5,
-            border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
-            color: "#9aa3b2", fontSize: 11, lineHeight: 1, cursor: "pointer",
-          },
-        }, "↻"),
-        h("span", { style: { color: "#b0b7c3", fontSize: 10, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")));
+        h("span", {
+          style: { display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 8, whiteSpace: "nowrap", verticalAlign: "middle" },
+        },
+          h("button", {
+            type: "button", onClick: onAccept,
+            title: tt(t, "ghost.acceptHint"),
+            style: {
+              pointerEvents: "auto", padding: "0 7px", height: 19, borderRadius: 5,
+              border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
+              color: "#9aa3b2", fontSize: 10, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer",
+            },
+          }, "Tab"),
+          h("button", {
+            type: "button", onClick: onReroll, title: tt(t, "ghost.reroll"),
+            style: {
+              pointerEvents: "auto", width: 19, height: 19, padding: 0, borderRadius: 5,
+              border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
+              color: "#9aa3b2", fontSize: 11, lineHeight: 1, cursor: "pointer",
+            },
+          }, "↻"),
+          h("span", { style: { color: "#b0b7c3", fontSize: 10, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss"))
+        )
+      );
     }
 
     // ================= 建议（composer dock 仅提供生命周期；显示覆盖到输入框内） =================

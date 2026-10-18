@@ -282,6 +282,14 @@ check('ghost 上有 Tab / ↻ / Esc 三个操作',
   labels.includes('Tab') && labels.includes('↻') && labels.some((t) => /Esc/.test(t)),
   labels.filter((t) => t.length < 12).join(' | '));
 
+// ③b 长建议必须完整可见：宽度跟随输入框内容区、允许折行，且子树里不能有省略号截断
+const ghostNode = find(dock.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true')[0];
+const ghostStyle = ghostNode?.props?.style ?? {};
+const ellipsized = find(ghostNode, (n) => n.props?.style && (n.props.style.textOverflow === 'ellipsis' || n.props.style.whiteSpace === 'nowrap' && n.props.style.overflow === 'hidden'));
+check('长建议不被省略号截断（宽度取自输入框、允许折行）',
+  ghostStyle.whiteSpace === 'pre-wrap' && ghostStyle.width === 400 && ellipsized.length === 0,
+  `whiteSpace=${ghostStyle.whiteSpace} width=${ghostStyle.width} 截断节点=${ellipsized.length}`);
+
 // ④ 设置页
 react.reset();
 const settingsComponent = registered['settings.section'].Component;
