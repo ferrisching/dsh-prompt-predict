@@ -6,18 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
-## [Unreleased]
+## [0.2.3] — 2026-10-18
 
 ### Fixed
 
+- **The suggestion is visible again.** `0.2.2` drew it as a row inside `conversation.composer.dock`;
+  the row rendered in tests and `Tab` accepted it, but it was **invisible in the real app**, so
+  rendering went back to the original overlay.
 - **The ghost text disappears as soon as you start typing.** DSH `0.2.1-rc.2` stopped exposing the
   composer draft through the slot's `useInput` (it now returns the Lexical input state), so the
   overlay stayed on screen and sat on top of what you were writing. It now hides on the first
   printable keypress, which needs no draft state at all, and comes back with the next prediction.
-  Rendering stays on the original overlay path: an in-dock row was built and proven invisible in the
-  real app, so it was dropped rather than merged.
 - Verified end to end on DSH `0.2.1-rc.2`: the suggestion appears after a reply, and the first
   keystroke removes it.
+
+## [0.2.2] — 2026-10-18 (deprecated)
+
+### Changed
+
+- The suggestion was drawn as a row inside `conversation.composer.dock` instead of a fixed overlay.
+  **Deprecated:** that row turned out not to be visible in the real app. Use `0.2.3` instead.
+
 
 ## [0.2.1] — 2026-10-17
 
