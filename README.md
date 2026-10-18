@@ -188,7 +188,7 @@ For model selection, `provider` / `model` set to `auto` means "follow the sessio
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 66 cases: 51 host-side + 15 client render smoke tests
+npm test        # 71 cases: 51 host-side + 20 client render smoke tests
 ```
 
 ```
@@ -203,7 +203,7 @@ npm test        # 66 cases: 51 host-side + 15 client render smoke tests
 │   └── client.js        Client: composer ghost-text overlay + settings page
 ├── test/
 │   ├── predict.mjs      51 cases: trimming, cleanup, route inheritance, settings validation, degrade-retry, dedup, bilingual errors, HTTP end-to-end
-│   └── client-render.mjs  15 cases: renders the ghost overlay and settings page through a tiny React stand-in, incl. both locales and dictionary self-checks
+│   └── client-render.mjs  20 cases: renders the ghost overlay and settings page through a tiny React stand-in, incl. both locales and dictionary self-checks
 ├── scripts/
 │   └── install.sh       One-shot install / upgrade
 ├── cordis.patch.yml     Plugin mount patch

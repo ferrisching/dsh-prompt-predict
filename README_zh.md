@@ -186,7 +186,7 @@ pnpm add /path/to/dsh-prompt-predict
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 66 项：51 项 Host 端 + 15 项客户端渲染冒烟
+npm test        # 71 项：51 项 Host 端 + 20 项客户端渲染冒烟
 ```
 
 ```
@@ -201,7 +201,7 @@ npm test        # 66 项：51 项 Host 端 + 15 项客户端渲染冒烟
 │   └── client.js        客户端：输入框 ghost text 覆盖层 + 设置页
 ├── test/
 │   ├── predict.mjs      51 项用例：文本裁剪、建议清洗、路由继承、设置校验、降级重试、去重、双语错误、接口端到端
-│   └── client-render.mjs  15 项用例：极简 React 替身渲染 ghost 覆盖层与设置页，含中英双语与词典自检
+│   └── client-render.mjs  20 项用例：极简 React 替身渲染 ghost 覆盖层与设置页，含中英双语与词典自检
 ├── scripts/
 │   └── install.sh       一键安装 / 升级
 ├── cordis.patch.yml     插件挂载补丁

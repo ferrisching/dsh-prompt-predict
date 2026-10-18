@@ -6,14 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [Unreleased]
+
 ### Fixed
 
-- **The suggestion is now an in-dock row instead of a fixed overlay.** DSH `0.2.1-rc.2` stopped
-  exposing the composer draft through the slot's `useInput`, so the overlay kept showing while
-  typing; and because it was positioned from `getBoundingClientRect` it vanished whenever that
-  measurement failed. The row lives in `conversation.composer.dock` — space the host allocates —
-  and hides on the first printable keypress, which needs no draft state.
-- Verified on DSH `0.2.1-rc.2`.
+- **The ghost text disappears as soon as you start typing.** DSH `0.2.1-rc.2` stopped exposing the
+  composer draft through the slot's `useInput` (it now returns the Lexical input state), so the
+  overlay stayed on screen and sat on top of what you were writing. It now hides on the first
+  printable keypress, which needs no draft state at all, and comes back with the next prediction.
+  Rendering stays on the original overlay path: an in-dock row was built and proven invisible in the
+  real app, so it was dropped rather than merged.
+- Verified end to end on DSH `0.2.1-rc.2`: the suggestion appears after a reply, and the first
+  keystroke removes it.
 
 ## [0.2.1] — 2026-10-17
 
