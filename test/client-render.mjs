@@ -133,7 +133,7 @@ function find(node, predicate, acc = []) {
   find(kids, predicate, acc);
   return acc;
 }
-const hasGhost = (tree) => find(tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true').length > 0;
+const hasGhost = (tree) => find(tree, (n) => n.props && (n.props['data-prompt-predict-ghost'] === 'true' || n.props['data-prompt-predict-row'] === 'true')).length > 0;
 const textOf = (tree) => find(tree, () => true)
   .flatMap((n) => (typeof n.props?.children === 'string' ? [n.props.children] : []))
   .join(' ');
@@ -308,7 +308,7 @@ check('设置页含关键设置项',
   }));
   await view.settle();
   const ghostText = () => {
-    const node = find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true')[0];
+    const node = find(view.tree, (n) => n.props && (n.props['data-prompt-predict-ghost'] === 'true' || n.props['data-prompt-predict-row'] === 'true'))[0];
     const kids = node?.props?.children;
     return Array.isArray(kids) ? kids[0]?.props?.children : null;
   };
@@ -345,6 +345,24 @@ for (const [lang, expect] of [['zh', '启用联想'], ['en', 'Enable predictions
   check('词典以命名空间注册进了 locale 服务',
     Boolean(dict) && Boolean(dict.zh) && Boolean(dict.en) && Object.keys(dict.en).length > 40,
     dict ? `zh=${Object.keys(dict.zh).length} en=${Object.keys(dict.en).length}` : 'not registered');
+}
+
+// 两向验收：① 空输入框显示建议 ② 按键后立即隐藏（不依赖 draft，rc.2 拿不到）
+{
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  const view = mount(inst.react, C, () => ({
+    sessionId: 'session-two-way',
+    useSession: (s) => s({ running: false, blank: false, removed: false }),
+    useInput: (s) => s({}),
+    inputActions: { captureInsertion: () => ({}), insertText: () => true },
+  }));
+  await view.settle();
+  const shown = hasGhost(view.tree);
+  inst.env.window.dispatchEvent({ type: 'keydown', key: 'a', bubbles: true, preventDefault() {}, stopPropagation() {} });
+  await view.settle(3);
+  check('两向验收①：空输入框显示建议', shown);
+  check('两向验收②：按键后建议立即隐藏', !hasGhost(view.tree));
 }
 
 console.log(`RESULT ${results.every(Boolean) ? 'PASS' : 'FAIL'} (${results.filter(Boolean).length}/${results.length})`);

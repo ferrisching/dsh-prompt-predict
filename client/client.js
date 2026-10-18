@@ -361,6 +361,10 @@ window.__ModuleLoader__.load({
       var abortRef = useRef(null);
       var sessionRef = useRef(sessionId);
       var dismissedByDraft = useRef(false);
+      // rc.2 不再把 draft 暴露给 slot，拿不到「输入框是否为空」。
+      // 用等价信号：建议可见时按下任何可打印键 = 用户开始输入 → 立即隐藏。
+      var _tk = useState(0), typedTick = _tk[0], setTypedTick = _tk[1];
+      var typedSince = useRef(false);
       // 逐段采纳的前缀，只有「输入框里确实还留着它」时才算数：
       // 用户把它删掉后必须重新完整展示整条建议，否则会出现从中间截断的鬼影。
       var prefixKept = accepted !== "" && suggestion.indexOf(accepted) === 0 && draft === accepted;
@@ -368,7 +372,7 @@ window.__ModuleLoader__.load({
       // 打字即隐藏，两种例外：
       //   (a) 草稿又被删空 —— 用户回到了「需要建议」的状态，让它重新浮现（只有 Esc 才是永久忽略）
       //   (b) 草稿正是我们逐段写进去、且没有改动的前缀 —— 不能把自己插的内容误判成用户打字
-      dismissedByDraft.current = draft.trim() !== "" && !prefixKept;
+      dismissedByDraft.current = (draft.trim() !== "" || typedSince.current) && !prefixKept;
       var visibleSuggestion = dismissedByDraft.current ? "" : remaining;
 
       // 首次读取启用状态；设置页保存后通过事件让当前会话立即生效。
@@ -395,6 +399,7 @@ window.__ModuleLoader__.load({
         dismissedByDraft.current = false;
         setSuggestion("");
         setAccepted("");
+        typedSince.current = false;
         if (abortRef.current) abortRef.current.abort();
       }, [sessionId]);
 
@@ -405,6 +410,7 @@ window.__ModuleLoader__.load({
           dismissedByDraft.current = false;
           setSuggestion("");
           setAccepted("");
+          typedSince.current = false;
           if (abortRef.current) abortRef.current.abort();
           return;
         }
@@ -418,6 +424,7 @@ window.__ModuleLoader__.load({
             .then(function (result) {
               if (controller.signal.aborted || sessionRef.current !== sessionId) return;
               if (result && result.ok && typeof result.suggestion === "string") {
+                typedSince.current = false;
                 setSuggestion(result.suggestion.trim());
                 recordRun(result, null);
               } else {
@@ -483,6 +490,11 @@ window.__ModuleLoader__.load({
         var onKey = function (event) {
           if (event.isComposing) return;
           if (event.key === "Escape") { event.preventDefault(); setSuggestion(""); setAccepted(""); return; }
+          // 任何可打印字符 → 认定用户开始输入，隐藏建议（与「开始输入自动消失」一致）
+          if (!typedSince.current && typeof event.key === "string" && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            typedSince.current = true;
+            setTypedTick(function (n) { return n + 1; });
+          }
           // Option/Alt + → ：逐段采纳（对齐 Codex 的手感）
           if (event.key === "ArrowRight" && event.altKey) {
             if (!acceptChunk()) return;
@@ -501,7 +513,37 @@ window.__ModuleLoader__.load({
 
       // 建议直接以灰色 ghost text 覆盖在 Lexical 输入框首字符处。
       if (!enabled || dismissedByDraft.current || !visibleSuggestion) return null;
-      return h(GhostOverlay, { suggestion: visibleSuggestion, sessionId: sessionId, onAccept: accept, onReroll: reroll, t: t });
+      // 在 composer dock 的流内渲染一行建议（不再用 fixed 覆盖层）：
+      // dock 是宿主分配了空间的位置，不依赖 findElement 算坐标，也不会压在草稿文字上。
+      return h("div", {
+        "data-prompt-predict-row": "true",
+        role: "status",
+        "aria-live": "polite",
+        style: {
+          display: "flex", alignItems: "center", gap: 8, minWidth: 0,
+          padding: "2px 4px", fontSize: 12, lineHeight: "18px", color: "#9aa3b2",
+        },
+      },
+        h("span", {
+          style: { flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+        }, visibleSuggestion),
+        h("button", {
+          type: "button", onClick: accept, title: tt(t, "ghost.acceptHint"),
+          style: {
+            flex: "none", padding: "0 7px", height: 19, borderRadius: 5,
+            border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
+            color: "#9aa3b2", fontSize: 10, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer",
+          },
+        }, "Tab"),
+        h("button", {
+          type: "button", onClick: reroll, title: tt(t, "ghost.reroll"),
+          style: {
+            flex: "none", width: 19, height: 19, padding: 0, borderRadius: 5,
+            border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
+            color: "#9aa3b2", fontSize: 11, lineHeight: 1, cursor: "pointer",
+          },
+        }, "↻"),
+        h("span", { style: { flex: "none", fontSize: 10, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")));
     }
 
     // ================= 设置页 =================
