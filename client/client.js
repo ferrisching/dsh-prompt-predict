@@ -513,39 +513,9 @@ window.__ModuleLoader__.load({
 
       // 建议直接以灰色 ghost text 覆盖在 Lexical 输入框首字符处。
       if (!enabled || dismissedByDraft.current || !visibleSuggestion) return null;
-      // 在 composer dock 的流内渲染一行建议（不再用 fixed 覆盖层）：
-      // dock 是宿主分配了空间的位置，不依赖 findElement 算坐标，也不会压在草稿文字上。
-      return h("div", {
-        "data-prompt-predict-row": "true",
-        role: "status",
-        "aria-live": "polite",
-        style: {
-          display: "flex", alignItems: "center", gap: 8, minWidth: 0, width: "100%",
-          margin: "2px 0", padding: "6px 10px", boxSizing: "border-box",
-          border: "1px solid #e5e7eb", borderRadius: 8, background: "#f8fafc",
-          fontSize: 13, lineHeight: "20px", color: "#6b7280",
-        },
-      },
-        h("span", {
-          style: { flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#6b7280" },
-        }, visibleSuggestion),
-        h("button", {
-          type: "button", onClick: accept, title: tt(t, "ghost.acceptHint"),
-          style: {
-            flex: "none", padding: "0 7px", height: 19, borderRadius: 5,
-            border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
-            color: "#9aa3b2", fontSize: 10, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer",
-          },
-        }, "Tab"),
-        h("button", {
-          type: "button", onClick: reroll, title: tt(t, "ghost.reroll"),
-          style: {
-            flex: "none", width: 19, height: 19, padding: 0, borderRadius: 5,
-            border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
-            color: "#9aa3b2", fontSize: 11, lineHeight: 1, cursor: "pointer",
-          },
-        }, "↻"),
-        h("span", { style: { flex: "none", fontSize: 10, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")));
+      // 回到覆盖层：它在真实环境里是可见的（dock 内联行实测看不见）。
+      // 「打字即隐藏」由上面的 typedSince 信号负责，不再依赖草稿状态。
+      return h(GhostOverlay, { suggestion: visibleSuggestion, sessionId: sessionId, onAccept: accept, onReroll: reroll, t: t });
     }
 
     // ================= 设置页 =================
