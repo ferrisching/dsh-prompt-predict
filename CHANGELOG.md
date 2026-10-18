@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [Unreleased]
+
+### Fixed
+
+- **Long suggestions are no longer cut off.** The ghost text was capped at 60 characters with an
+  ellipsis (`white-space: nowrap` + `text-overflow: ellipsis`), so anything longer than a short
+  sentence ended in `…`. It now takes the composer's content width and wraps in place, so the whole
+  suggestion stays readable; the `Tab` / `↻` / `Esc` controls follow the last line.
+
 ## [0.2.3] — 2026-10-18
 
 ### Fixed
