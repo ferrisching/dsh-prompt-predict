@@ -145,10 +145,6 @@ function makeEnv() {
     parentElement: { querySelector: () => null },
     focus() {},
     innerText: '',
-    _listeners: {},
-    addEventListener(type, fn) { (this._listeners[type] ||= []).push(fn); },
-    removeEventListener(type, fn) { this._listeners[type] = (this._listeners[type] || []).filter((f) => f !== fn); },
-    emit(type) { (this._listeners[type] || []).slice().forEach((f) => f()); },
   };
   const listeners = new Map();
   const window = {
@@ -296,25 +292,6 @@ check('设置页渲染不抛异常', Boolean(settings.tree));
 check('设置页含关键设置项',
   /启用联想/.test(settingsText) && /提供商/.test(settingsText) && /上次预测/.test(settingsText),
   settingsText.slice(0, 50));
-
-// ⑧ DSH 0.2.1-rc.1 起 useInput 的快照里没有 draft —— 必须能从输入框 DOM 读到
-{
-  const inst = setup();
-  const C = inst.registered['conversation.composer.dock'].Component;
-  const view = mount(inst.react, C, () => ({
-    sessionId: 'session-domdraft',
-    useSession: (s) => s({ running: false, blank: false, removed: false }),
-    useInput: (s) => s({}),                 // 关键：没有 draft 字段，模拟新版本
-    inputActions: { captureInsertion: () => ({}), insertText: () => true },
-  }));
-  await view.settle();
-  const withEmpty = hasGhost(view.tree);
-  inst.env.editor.innerText = '我正在打字';
-  inst.env.editor.emit('input');
-  await view.settle(3);
-  check('props 无 draft 时从 DOM 读草稿：空输入框显示建议', withEmpty);
-  check('props 无 draft 时从 DOM 读草稿：一有草稿就隐藏', !hasGhost(view.tree));
-}
 
 // ⑥ 逐段采纳的前缀失效：把已采纳的那段删掉后，必须重新展示**完整**建议
 //    （手测录素材时发现的：旧实现会显示从中间截断的残句，按 Tab 只插入半句）

@@ -353,25 +353,7 @@ window.__ModuleLoader__.load({
       var running = useSession(function (value) { return Boolean(value && value.running); });
       var blank = useSession(function (value) { return Boolean(value && value.blank); });
       var removed = useSession(function (value) { return Boolean(value && value.removed); });
-      var propsDraft = useInput(function (value) { return String(value && value.draft || ""); });
-      // DSH 0.2.1-rc.1 起 useInput 的快照里没有 draft 了（换成了 Lexical 输入态字段），
-      // 只依赖它会让插件永远以为输入框是空的。这里直接读输入框 DOM，并订阅输入事件。
-      var _dd = useState(""), domDraft = _dd[0], setDomDraft = _dd[1];
-      useEffect(function () {
-        var ed = findEditor(sessionId);
-        if (!ed) return undefined;
-        var sync = function () { setDomDraft(String(ed.innerText || "")); };
-        sync();
-        ed.addEventListener("input", sync);
-        ed.addEventListener("keyup", sync);
-        ed.addEventListener("compositionend", sync);
-        return function () {
-          ed.removeEventListener("input", sync);
-          ed.removeEventListener("keyup", sync);
-          ed.removeEventListener("compositionend", sync);
-        };
-      }, [sessionId, running]);
-      var draft = propsDraft !== "" ? propsDraft : domDraft;
+      var draft = useInput(function (value) { return String(value && value.draft || ""); });
       var _s = useState(""), suggestion = _s[0], setSuggestion = _s[1];
       var _ac = useState(""), accepted = _ac[0], setAccepted = _ac[1];   // 逐段采纳已写进输入框的前缀
       var _en = useState(true), enabled = _en[0], setEnabled = _en[1];
