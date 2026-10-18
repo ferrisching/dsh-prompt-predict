@@ -520,12 +520,14 @@ window.__ModuleLoader__.load({
         role: "status",
         "aria-live": "polite",
         style: {
-          display: "flex", alignItems: "center", gap: 8, minWidth: 0,
-          padding: "2px 4px", fontSize: 12, lineHeight: "18px", color: "#9aa3b2",
+          display: "flex", alignItems: "center", gap: 8, minWidth: 0, width: "100%",
+          margin: "2px 0", padding: "6px 10px", boxSizing: "border-box",
+          border: "1px solid #e5e7eb", borderRadius: 8, background: "#f8fafc",
+          fontSize: 13, lineHeight: "20px", color: "#6b7280",
         },
       },
         h("span", {
-          style: { flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+          style: { flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "#6b7280" },
         }, visibleSuggestion),
         h("button", {
           type: "button", onClick: accept, title: tt(t, "ghost.acceptHint"),
