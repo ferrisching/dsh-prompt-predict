@@ -6,7 +6,7 @@
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-prompt-predict" /></a>
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-prompt-predict" /></a>
   <a href="https://github.com/ferrisching/dsh-prompt-predict/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/ferrisching/dsh-prompt-predict" /></a>
-  <img alt="Verified on DSH 0.2.1-rc.1" src="https://img.shields.io/badge/DSH-0.2.1--rc.1-4d6bfe" />
+  <img alt="Verified on DSH 0.2.1-rc.2" src="https://img.shields.io/badge/DSH-0.2.1--rc.2-4d6bfe" />
   <img alt="Zero runtime dependencies" src="https://img.shields.io/badge/dependencies-zero%20runtime-41ba41" />
   <img alt="Host + client plugin" src="https://img.shields.io/badge/shape-host%20%2B%20client-8250df" />
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
@@ -113,7 +113,7 @@ Then open that profile's `package.json` and add `"dsh-prompt-predict"` to the `d
 
 ### Requirements
 
-- Verified on **DSH `0.2.1-rc.1`** (web build; the desktop app runs the same host and client code)
+- Verified on **DSH `0.2.1-rc.2`** (web build; the desktop app runs the same host and client code)
 - `node` / `pnpm`: the install script prefers DSH's own runtime under `~/.dsh/dsh-runtimes/*/dependencies` and only falls back to `PATH`
 - macOS / Linux; Windows untested
 
@@ -223,7 +223,7 @@ The tests need no DSH runtime: a fake ctx plus a local HTTP server cover route r
 
 ## ⚠️ Known limitations
 
-- Verified only on DSH `0.2.1-rc.1`; other versions untested
+- Verified only on DSH `0.2.1-rc.2`; other versions untested
 - Depends on the host's `conversation.composer.dock` and `settings.section` slot names — a major DSH update may require adapting
 - Predictions consume quota on the selected model; pinning a fast small model is cheaper than following a reasoning model
 
