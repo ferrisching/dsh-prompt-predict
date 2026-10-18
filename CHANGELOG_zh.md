@@ -5,6 +5,14 @@
 
 [English](CHANGELOG.md)
 
+### 修复
+
+- **建议改为在 composer dock 内的一行，不再用 fixed 覆盖层。** DSH `0.2.1-rc.2` 不再通过 slot 的
+  `useInput` 暴露草稿，覆盖层会在打字时继续显示；而它靠 `getBoundingClientRect` 定位，一旦算不出
+  坐标就整个消失。新实现放在 `conversation.composer.dock`（宿主分配好的空间），并在第一个可打印
+  按键时隐藏——不依赖草稿状态。
+- 已在 DSH `0.2.1-rc.2` 上验证。
+
 ## [0.2.1] — 2026-10-17
 
 ### 修复

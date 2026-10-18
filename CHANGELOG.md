@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+### Fixed
+
+- **The suggestion is now an in-dock row instead of a fixed overlay.** DSH `0.2.1-rc.2` stopped
+  exposing the composer draft through the slot's `useInput`, so the overlay kept showing while
+  typing; and because it was positioned from `getBoundingClientRect` it vanished whenever that
+  measurement failed. The row lives in `conversation.composer.dock` — space the host allocates —
+  and hides on the first printable keypress, which needs no draft state.
+- Verified on DSH `0.2.1-rc.2`.
+
 ## [0.2.1] — 2026-10-17
 
 ### Fixed
