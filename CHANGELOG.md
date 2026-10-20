@@ -6,27 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
-## [Unreleased]
+## [0.2.5] — 2026-10-20
 
 ### Added
 
-- **Recent predictions list.** The settings page now keeps the last few runs (default 10, adjustable
-  1–50) with their time, session, provider/model, latency and flags (truncated, effort downgraded,
-  rerolled, failed). This replaces the old single "last prediction" line, which showed the same
-  run twice, and each row names the session it came from — which matters once several conversations
-  are open. Records are kept in the app's own local storage (Electron renderer on desktop, page `localStorage` on web; never uploaded), so they survive a page
-  reload; the list header shows how many of the configured cap are in use (`3/10`). The list itself
-  stays folded to the newest run — `▸ Show all` opens the rest — and the newest run's suggestion text is
-  expanded by default; every row has its own `▸` that expands that run's text and collapses whichever
-  row was open.
+- **Recent predictions list.** The settings page keeps the last few runs (default 10, adjustable
+  1–50) with their time, session, provider/model, latency, and flags (truncated, effort downgraded,
+  rerolled, failed) — plus the suggestion text itself. The list stays folded to the newest run
+  (`▸ Show all` opens the rest), the newest run's text is expanded by default, and clicking another
+  row's `▸` expands that one while collapsing the previous. It replaces the old single "last
+  prediction" line, which showed the same run twice.
+- **Session labels.** Every row names the session the run came from. DSH's host session object
+  carries no title, so the label is resolved from the client session store and falls back to the tail
+  of the session id.
+- Records live in the app's own local storage (the Electron renderer on desktop, the page's
+  `localStorage` on web) and are never uploaded, so they survive a reload. The header shows how much
+  of the configured cap is in use (`3/10`).
 
 ### Fixed
 
 - **Suggestions no longer stop mid-sentence.** The output cap defaulted to 64 tokens, not enough for
-  one full Chinese sentence, so the ghost text could end abruptly. The default is now 256; a reply
-  that hits the cap (`finish.reason.kind === 'max-tokens'`) is retried once with a bigger budget
-  (at least 384, up to 1024); and if it still happens the ghost text carries a small **cut off · raise the output cap** marker
-  and the settings page says so above the recent-predictions list.
+  one full Chinese sentence, so the ghost text could end abruptly. The default is now 256 and the
+  ceiling 1024 (was 512); a reply that hits the cap (`finish.reason.kind === 'max-tokens'`) is
+  retried once with a bigger budget (at least 384), and if it still gets cut the ghost text says
+  **cut off · raise the output cap** and the settings page says the same above the history list.
 
 ## [0.2.4] — 2026-10-18
 

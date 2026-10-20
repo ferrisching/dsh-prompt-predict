@@ -57,7 +57,7 @@
 **或者用 dsh CLI**——想装某个已发布版本就用 pnpm 的 `@版本` 语法：
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.4
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.5
 ```
 
 `--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`），**装完重启 DSH 生效**。
@@ -75,8 +75,8 @@ dsh plugin --profile desktop add dsh-prompt-predict@0.2.4
 **完全一致**的 tarball（`shasum` 与 registry 相同），适合离线机器或需要自行校验产物的场景：
 
 ```bash
-gh release download v0.2.4 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.4.tgz
+gh release download v0.2.5 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.5.tgz
 ```
 
 与上面 CLI 路径同样的注意点：请自己把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles`，

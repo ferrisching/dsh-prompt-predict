@@ -57,7 +57,7 @@ The plugin is published on npm. Options are ordered by convenience.
 **Or the dsh CLI** — pin any published version with pnpm's `@version` syntax:
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.4
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.5
 ```
 
 Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build), then **restart DSH**.
@@ -77,8 +77,8 @@ tarball that is on npm (`shasum` matches the registry), which is handy for offli
 pinning an artifact you can verify:
 
 ```bash
-gh release download v0.2.4 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.4.tgz
+gh release download v0.2.5 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.5.tgz
 ```
 
 Same caveat as the CLI route above: add `"dsh-prompt-predict"` to `dsh.profile.bundles` yourself,
