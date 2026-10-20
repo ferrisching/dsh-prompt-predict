@@ -25,6 +25,8 @@ window.__ModuleLoader__.load({
         "ghost.acceptHint": "Tab 采纳 · Alt+→ 逐段采纳",
         "ghost.reroll": "换一条建议",
         "ghost.dismiss": "Esc 忽略",
+        "ghost.truncated": "已截断 · 建议调高输出上限（max tokens）",
+        "ghost.truncatedHint": "模型输出撞到「输出上限」被截断：可在 设置 → 提示词联想 → 高级 里调高",
         "settings.title": "提示词联想",
         "settings.desc": "助手回复结束后，在输入框里直接给出灰色建议（Tab 采纳、Esc 忽略、开始输入自动消失）。",
         "settings.enable": "启用联想",
@@ -45,7 +47,7 @@ window.__ModuleLoader__.load({
         "settings.maxChars": "上下文预算",
         "settings.maxCharsHint": "字符上限（1000–20000），越小越省 token",
         "settings.maxTokens": "输出上限",
-        "settings.maxTokensHint": "token（16–512），建议够一句话即可",
+        "settings.maxTokensHint": "token（16–1024）。256 大约够 64 个汉字；仍出现半句截断时，把这里调高（最大 1024）",
         "settings.effort": "思考深度",
         "settings.effortDefault": "跟随模型默认",
         "settings.effortDefaultNoLevels": "跟随模型默认（该模型未公布可调档位）",
@@ -63,11 +65,23 @@ window.__ModuleLoader__.load({
         "settings.actionFailed": "操作失败",
         "settings.resetDone": "已恢复默认",
         "settings.loading": "加载中…",
-        "run.none": "上次预测：暂无记录（本轮还沒触发过联想）",
-        "run.line": "上次预测：{time} · {detail}",
-        "run.failed": "上次预测：{time} · 失败 — {reason}",
         "run.effortDropped": "已自动降级思考档位",
         "run.dedupRetry": "已换一条",
+        "run.truncated": "被输出上限截断",
+        "settings.truncatedWarn": "最近一次预测被输出上限截断了：把上面的「输出上限」调高到 320 或更大，点「保存」，再触发一次联想试试。",
+        "run.session": "会话 {name}",
+        "run.failedShort": "失败 — {reason}",
+        "settings.historyTitle": "最近预测（{count}/{limit}）",
+        "settings.historyHint": "点一行可以展开当时的建议原文（只存在本机，不上传）",
+        "settings.historyToggle": "展开 / 收起建议原文",
+        "settings.historyExpand": "展开全部",
+        "settings.historyCollapse": "收起",
+        "settings.historyNoText": "这次预测没有记录到建议原文（功能上线前的旧记录）",
+        "settings.historyEmpty": "还没有记录：触发一次联想后，这里会列出最近几次的会话、模型、耗时和异常标记。",
+        "settings.historySize": "记录条数",
+        "settings.historySizeHint": "保留最近多少次预测记录（1–50）。记录存在{storage}，本机、不上传，刷新/重启后仍在",
+        "storage.electron": "本应用内（Electron 渲染层存储）",
+        "storage.web": "浏览器的 localStorage",
         "dock.noSuggestion": "预测未返回有效建议",
         "dock.rerollFailed": "换一条失败",
       },
@@ -77,6 +91,8 @@ window.__ModuleLoader__.load({
         "ghost.acceptHint": "Tab to accept · Alt+→ piece by piece",
         "ghost.reroll": "Suggest another",
         "ghost.dismiss": "Esc to dismiss",
+        "ghost.truncated": "cut off · raise the output cap (max tokens)",
+        "ghost.truncatedHint": "The model hit the output cap: raise \"Output cap\" in Settings → Prompt suggestions → Advanced",
         "settings.title": "Prompt suggestions",
         "settings.desc": "Shows a gray suggestion in the composer right after each reply (Tab to accept, Esc to dismiss, start typing and it goes away).",
         "settings.enable": "Enable predictions",
@@ -97,7 +113,7 @@ window.__ModuleLoader__.load({
         "settings.maxChars": "Context budget",
         "settings.maxCharsHint": "Character cap (1000–20000); lower saves tokens",
         "settings.maxTokens": "Output cap",
-        "settings.maxTokensHint": "tokens (16–512); enough for one sentence",
+        "settings.maxTokensHint": "tokens (16-1024). 256 is about 64 Chinese characters; raise this if suggestions still get cut off (max 1024)",
         "settings.effort": "Reasoning effort",
         "settings.effortDefault": "Follow the model default",
         "settings.effortDefaultNoLevels": "Follow the model default (this model publishes no levels)",
@@ -115,11 +131,23 @@ window.__ModuleLoader__.load({
         "settings.actionFailed": "Action failed",
         "settings.resetDone": "Defaults restored",
         "settings.loading": "Loading…",
-        "run.none": "Last prediction: no record yet (nothing triggered this round)",
-        "run.line": "Last prediction: {time} · {detail}",
-        "run.failed": "Last prediction: {time} · failed — {reason}",
         "run.effortDropped": "reasoning level auto-downgraded",
         "run.dedupRetry": "rerolled",
+        "run.truncated": "hit the output cap",
+        "settings.truncatedWarn": "The latest prediction hit the output cap: raise Output cap above to 320 or higher, click Save, then trigger a prediction again.",
+        "run.session": "session {name}",
+        "run.failedShort": "failed — {reason}",
+        "settings.historyTitle": "Recent predictions ({count}/{limit})",
+        "settings.historyHint": "Click a row to expand the suggestion text (stored locally, never uploaded)",
+        "settings.historyToggle": "Expand / collapse the suggestion text",
+        "settings.historyExpand": "Show all",
+        "settings.historyCollapse": "Collapse",
+        "settings.historyNoText": "No suggestion text recorded for this run (older record)",
+        "settings.historyEmpty": "No records yet: trigger a prediction and this list shows the last few with their session, model, latency and flags.",
+        "settings.historySize": "History size",
+        "settings.historySizeHint": "how many recent predictions to keep (1-50). Stored in {storage}; local only, never uploaded, survives reloads",
+        "storage.electron": "the app's own storage (Electron renderer)",
+        "storage.web": "the browser's localStorage",
         "dock.noSuggestion": "Prediction returned no usable suggestion",
         "dock.rerollFailed": "Reroll failed",
       },
@@ -181,6 +209,19 @@ window.__ModuleLoader__.load({
       btnGhost: { padding: "8px 16px", border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", color: "#374151", cursor: "pointer", fontSize: 13 },
       toggleTrack: function (on) { return { width: 38, height: 22, borderRadius: 22, border: 0, cursor: "pointer", padding: 2, background: on ? "#4f6ef7" : "#d1d5db", transition: "background .15s" }; },
       toggleThumb: function (on) { return { display: "block", width: 18, height: 18, borderRadius: 18, background: "#fff", transform: on ? "translateX(16px)" : "translateX(0)", transition: "transform .15s" }; },
+      warn: { color: "#b45309", fontSize: 12.5, lineHeight: 1.7, margin: "-8px 0 0 122px" },
+      warnBlock: { color: "#b45309", fontSize: 12.5, lineHeight: 1.7, margin: "-4px 0 12px" },
+      sectionTitle: { fontSize: 13, fontWeight: 600, color: "#374151", margin: "0 0 8px" },
+      histHead: { display: "flex", alignItems: "baseline", gap: 10, margin: "0 0 6px" },
+      histToggle: { background: "none", border: 0, color: "#4f6ef7", fontSize: 12, cursor: "pointer", padding: 0 },
+      histHint: { color: "#9ca3af", fontSize: 12, lineHeight: 1.7, margin: "0 0 6px" },
+      histRowWrap: { borderBottom: "1px solid #f1f1f5", padding: "2px 0" },
+      histRow: { display: "flex", gap: 10, alignItems: "baseline", fontSize: 12.5, lineHeight: 1.9 },
+      histCaret: { color: "#9ca3af", flex: "none", width: 10, fontSize: 11 },
+      histText: { whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#374151", fontSize: 12.5, lineHeight: 1.7, margin: "2px 0 10px 20px", padding: "8px 10px", borderRadius: 8, background: "#f8fafc" },
+      histWhen: { color: "#6b7280", flex: "none", width: 76 },
+      histWho: { color: "#111827", flex: "none", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+      histWhat: { color: "#6b7280", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
       err: { color: "#dc2626", fontSize: 12, marginTop: 8 },
       ok: { color: "#047857", fontSize: 12, marginTop: 8 },
       divider: { borderTop: "1px solid #ececf1", margin: "16px 0" },
@@ -213,20 +254,95 @@ window.__ModuleLoader__.load({
     // 设置页本身拿不到会话上下文，但「思考档位」必须按**会话实际模型**生成，
     // 否则用户选到的档位可能不被真实调用的模型支持（表现为「设置都对但永远没有建议」）。
     var liveSessionId = null;
-    // 上一次预测的结果快照：设置页据此显示「上次预测：模型 / 耗时 / 错误」。
-    // 之前失败是静默的，用户和作者都看不出是没触发、超时还是模型报错。
-    var lastRun = null;
-    function recordRun(result, error) {
-      lastRun = {
+    // 预测运行记录：最近若干次（条数可在设置里调，默认 10），新的在前。
+    // 持久化在应用自身的 localStorage（desktop 即 Electron 渲染层，web 即页面存储；都只在本机、不上传）：
+    // 刷新页面或重启 App 后仍能回看，排障才有意义。
+    var HISTORY_KEY = "dsh-prompt-predict.history";
+    function readStoredHistory() {
+      try {
+        var store = window.localStorage;
+        if (!store) return [];
+        var raw = store.getItem(HISTORY_KEY);
+        var list = raw ? JSON.parse(raw) : [];
+        return Array.isArray(list) ? list.filter(function (item) { return item && typeof item.at === "number"; }) : [];
+      } catch { return []; }
+    }
+    function persistHistory() {
+      try {
+        var store = window.localStorage;
+        if (store) store.setItem(HISTORY_KEY, JSON.stringify(runHistory.slice(0, 50)));
+      } catch { /* 隐私模式 / 配额满：不存也不影响功能 */ }
+    }
+    // 存储位置的说法要跟运行环境一致：desktop 是 Electron 渲染层，web 是页面 localStorage。
+    // 措辞写死成任意一种，另一个平台就会显示错。
+    function storagePlatformKey() {
+      try {
+        var ua = typeof navigator !== "undefined" && navigator && navigator.userAgent ? String(navigator.userAgent) : "";
+        return /electron/i.test(ua) ? "storage.electron" : "storage.web";
+      } catch { return "storage.web"; }
+    }
+    // 最近预测记录：刷新页面、重启 App 都还在（存在应用自身的 localStorage，本机、不上传）
+    var runHistory = readStoredHistory();
+    var historyLimit = 10;
+    // 会话标题：Host 端拿不到（会话对象没有标题字段），所以从客户端的会话 store 里取。
+    // 不同版本 store 的形状不一样（数组 / {sessions:[...]} / {byId:{...}}），都试一遍。
+    function titleOfSession(value) {
+      if (!value || typeof value !== "object") return "";
+      var t = value.title || value.name
+        || (value.record && value.record.title)
+        || (value.meta && value.meta.title)
+        || "";
+      return typeof t === "string" ? t.trim() : "";
+    }
+    function titleFromList(state, id) {
+      if (!state || !id) return "";
+      var list = null;
+      if (Array.isArray(state)) list = state;
+      else if (Array.isArray(state.sessions)) list = state.sessions;
+      else if (Array.isArray(state.list)) list = state.list;
+      else if (state.byId && typeof state.byId === "object") list = Object.keys(state.byId).map(function (k) { return state.byId[k]; });
+      if (!list) return "";
+      for (var i = 0; i < list.length; i += 1) {
+        var item = list[i];
+        if (!item) continue;
+        var sid = item.id || item.sessionId;
+        if (sid !== id) continue;
+        var title = titleOfSession(item);
+        if (title) return title;
+      }
+      return "";
+    }
+    // 会话显示名：上述标题优先，拿不到就退回「会话 id 尾部」。
+    function runSessionName(run) {
+      if (!run) return null;
+      if (run.session) return run.session;
+      if (!run.sessionId) return null;
+      // DSH 的会话 id 形如 session-<uuid>：去掉前缀再取尾部，才不会人人都显示成 "session-"
+      var raw = String(run.sessionId).replace(/^session[-_]/i, "");
+      if (!raw) return String(run.sessionId);
+      return raw.length > 8 ? raw.slice(-8) : raw;
+    }
+    function recordRun(sessionId, result, error, title) {
+      var entry = {
         at: Date.now(),
+        sessionId: sessionId || null,
+        session: (result && result.session) || (title && String(title).trim()) || null,
         ms: result && typeof result.ms === "number" ? result.ms : null,
         provider: (result && result.provider) || null,
         model: (result && result.model) || null,
         effortDropped: Boolean(result && result.effortDropped),
         dedupRetry: Boolean(result && result.dedupRetry),
+        truncated: Boolean(result && result.truncated),
+        suggestion: (result && typeof result.suggestion === "string" && result.suggestion.trim()) || null,
         error: error || null,
       };
-      window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", { detail: lastRun }));
+      // 以已落盘的那份为准再插队：dock 与设置页可能是两个模块实例，
+      // 各自内存里的 runHistory 会互相覆盖，丢记录的根源就在这里。
+      var list = readStoredHistory();
+      list.unshift(entry);
+      runHistory = list.slice(0, Math.max(1, historyLimit));
+      persistHistory();
+      window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", { detail: { latest: entry, history: runHistory.slice() } }));
     }
 
     // 逐段采纳用：英文按一个词（含其后空格），中日韩一次 2 个字，其余按单字符。
@@ -251,21 +367,22 @@ window.__ModuleLoader__.load({
       return tt(t, "settings.effortFromSession", { provider: cur.provider, model: cur.model });
     }
 
-    // 上次预测的运行情况：模型 / 耗时 / 是否降级 / 是否换过 / 失败原因
-    function runText(run, t) {
-      if (!run) return tt(t, "run.none");
-      var time = new Date(run.at).toLocaleTimeString();
-      if (run.error) return tt(t, "run.failed", { time: time, reason: String(run.error) });
-      var bits = [(run.provider || "?") + " / " + (run.model || "?")];
-      if (typeof run.ms === "number") bits.push(run.ms + " ms");
-      if (run.effortDropped) bits.push(tt(t, "run.effortDropped"));
-      if (run.dedupRetry) bits.push(tt(t, "run.dedupRetry"));
-      return tt(t, "run.line", { time: time, detail: bits.join(" · ") });
+    // 历史里一行的明细：模型 / 耗时 / 各种降级与截断标记；失败显示原因
+    function historyDetail(item, t) {
+      if (!item) return "";
+      if (item.error) return tt(t, "run.failedShort", { reason: String(item.error).slice(0, 80) });
+      var bits = [(item.provider || "?") + " / " + (item.model || "?")];
+      if (typeof item.ms === "number") bits.push(item.ms + " ms");
+      if (item.effortDropped) bits.push(tt(t, "run.effortDropped"));
+      if (item.dedupRetry) bits.push(tt(t, "run.dedupRetry"));
+      if (item.truncated) bits.push(tt(t, "run.truncated"));
+      return bits.join(" · ");
     }
 
     // 行内 ghost text 覆盖层：不写进 Lexical，只有 Tab/点击采纳时才 insertText。
     function GhostOverlay(props) {
       var suggestion = props.suggestion;
+      var truncated = Boolean(props.truncated);
       var sessionId = props.sessionId;
       var onAccept = props.onAccept;
       var onReroll = props.onReroll;
@@ -349,7 +466,10 @@ window.__ModuleLoader__.load({
               color: "#9aa3b2", fontSize: 11, lineHeight: 1, cursor: "pointer",
             },
           }, "↻"),
-          h("span", { style: { color: "#b0b7c3", fontSize: 10, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss"))
+          h("span", { style: { color: "#b0b7c3", fontSize: 10, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")),
+          truncated
+            ? h("span", { style: { color: "#c08457", fontSize: 10, whiteSpace: "nowrap" }, title: tt(t, "ghost.truncatedHint") }, tt(t, "ghost.truncated"))
+            : null
         )
       );
     }
@@ -361,11 +481,17 @@ window.__ModuleLoader__.load({
       var useInput = props.useInput;
       var inputActions = props.inputActions;
       var t = props.t;
+      // 标题：先看会话 store（列表），再退回当前会话对象本身。两个 hook 都必须无条件调用。
+      var useSessions = typeof props.useSessions === "function" ? props.useSessions : function () { return null; };
+      var sessionsSnapshot = useSessions(function (value) { return value; });
+      var currentSession = useSession(function (value) { return value; });
+      var sessionTitle = titleFromList(sessionsSnapshot, sessionId) || titleOfSession(currentSession);
       var running = useSession(function (value) { return Boolean(value && value.running); });
       var blank = useSession(function (value) { return Boolean(value && value.blank); });
       var removed = useSession(function (value) { return Boolean(value && value.removed); });
       var draft = useInput(function (value) { return String(value && value.draft || ""); });
       var _s = useState(""), suggestion = _s[0], setSuggestion = _s[1];
+      var _tr = useState(false), truncated = _tr[0], setTruncated = _tr[1];
       var _ac = useState(""), accepted = _ac[0], setAccepted = _ac[1];   // 逐段采纳已写进输入框的前缀
       var _en = useState(true), enabled = _en[0], setEnabled = _en[1];
       var armed = useRef(true);
@@ -388,12 +514,16 @@ window.__ModuleLoader__.load({
 
       // 首次读取启用状态；设置页保存后通过事件让当前会话立即生效。
       useEffect(function () {
-        api("status").then(function (j) { setEnabled(!(j && j.effective && j.effective.enabled === false)); }).catch(function () { });
+        api("status").then(function (j) {
+          setEnabled(!(j && j.effective && j.effective.enabled === false));
+          if (j && j.effective && typeof j.effective.historySize === "number") historyLimit = j.effective.historySize;
+        }).catch(function () { });
       }, [sessionId]);
       useEffect(function () {
         var changed = function (event) {
           var on = event.detail?.enabled !== false;
           setEnabled(on);
+          if (event.detail && typeof event.detail.historySize === "number") historyLimit = event.detail.historySize;
           if (!on) {
             setSuggestion("");
             if (abortRef.current) abortRef.current.abort();
@@ -437,13 +567,14 @@ window.__ModuleLoader__.load({
               if (result && result.ok && typeof result.suggestion === "string") {
                 typedSince.current = false;
                 setSuggestion(result.suggestion.trim());
-                recordRun(result, null);
+                setTruncated(Boolean(result.truncated));
+                recordRun(sessionId, result, null, sessionTitle);
               } else {
                 // 失败照样记下来：设置页会显示原因（以前是彻底静默，排查全靠猜）
-                recordRun(null, (result && result.reason) || tt(t, "dock.noSuggestion"));
+                recordRun(sessionId, null, (result && result.reason) || tt(t, "dock.noSuggestion"), sessionTitle);
               }
             })
-            .catch(function (error) { recordRun(null, String(error)); });
+            .catch(function (error) { recordRun(sessionId, null, String(error), sessionTitle); });
         }, 350);
         return function () {
           clearTimeout(timer);
@@ -488,12 +619,12 @@ window.__ModuleLoader__.load({
             if (result && result.ok && typeof result.suggestion === "string") {
               setSuggestion(result.suggestion.trim());
               setAccepted("");
-              recordRun(result, null);
+              recordRun(sessionId, result, null, sessionTitle);
             } else {
-              recordRun(null, (result && result.reason) || tt(t, "dock.rerollFailed"));
+              recordRun(sessionId, null, (result && result.reason) || tt(t, "dock.rerollFailed"), sessionTitle);
             }
           })
-          .catch(function (error) { recordRun(null, String(error)); });
+          .catch(function (error) { recordRun(sessionId, null, String(error), sessionTitle); });
       }, [sessionId, suggestion]);
 
       useEffect(function () {
@@ -526,7 +657,7 @@ window.__ModuleLoader__.load({
       if (!enabled || dismissedByDraft.current || !visibleSuggestion) return null;
       // 回到覆盖层：它在真实环境里是可见的（dock 内联行实测看不见）。
       // 「打字即隐藏」由上面的 typedSince 信号负责，不再依赖草稿状态。
-      return h(GhostOverlay, { suggestion: visibleSuggestion, sessionId: sessionId, onAccept: accept, onReroll: reroll, t: t });
+      return h(GhostOverlay, { suggestion: visibleSuggestion, sessionId: sessionId, truncated: truncated, onAccept: accept, onReroll: reroll, t: t });
     }
 
     // ================= 设置页 =================
@@ -539,10 +670,14 @@ window.__ModuleLoader__.load({
       var _to = useState(12), timeoutSec = _to[0], setTimeoutSec = _to[1];
       var _ctx = useState(8), ctxSize = _ctx[0], setCtxSize = _ctx[1];
       var _mc = useState(6000), maxChars = _mc[0], setMaxChars = _mc[1];
-      var _mt = useState(64), maxTokens = _mt[0], setMaxTokens = _mt[1];
+      var _mt = useState(256), maxTokens = _mt[0], setMaxTokens = _mt[1];
+      var _hs = useState(10), historySize = _hs[0], setHistorySize = _hs[1];
       var _ef = useState("off"), effort = _ef[0], setEffort = _ef[1];
       var _eo = useState([]), effortOptions = _eo[0], setEffortOptions = _eo[1];
-      var _run = useState(lastRun), run = _run[0], setRun = _run[1];
+      var _hist = useState(runHistory.slice()), history = _hist[0], setHistory = _hist[1];
+      var _open = useState(null), openKey = _open[0], setOpenKey = _open[1];   // null = 默认展开第一条
+      var _listOpen = useState(false), listOpen = _listOpen[0], setListOpen = _listOpen[1];
+      var run = history[0] || null;
       var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
       var _msg = useState(null), msg = _msg[0], setMsg = _msg[1];
       var _adv = useState(false), adv = _adv[0], setAdv = _adv[1];
@@ -560,7 +695,11 @@ window.__ModuleLoader__.load({
           setTimeoutSec(Math.round((eff.timeoutMs || 12000) / 1000));
           setCtxSize(eff.maxMessages || 8);
           setMaxChars(eff.maxChars || 6000);
-          setMaxTokens(eff.maxTokens || 64);
+          setMaxTokens(eff.maxTokens || 256);
+          setHistorySize(eff.historySize || 10);
+          historyLimit = eff.historySize || 10;
+          var stored = readStoredHistory();
+          if (stored.length) setHistory(stored);
           setEffort(eff.reasoningEffort || "off");
           setDirty(false);
         }).catch(function () { });
@@ -570,7 +709,12 @@ window.__ModuleLoader__.load({
 
       // 设置页打开时若已有预测记录，直接显示；之后靠事件实时刷新
       useEffect(function () {
-        var on = function (event) { setRun(event.detail); };
+        var on = function (event) {
+          // localStorage 是唯一数据源：dock 与设置页可能是两个模块实例，
+          // 光靠事件只能看到「挂载之后」发生的那几条。
+          var stored = readStoredHistory();
+          setHistory(stored.length ? stored : ((event.detail && event.detail.history) || []));
+        };
         window.addEventListener("dsh-prompt-predict:run", on);
         return function () { window.removeEventListener("dsh-prompt-predict:run", on); };
       }, []);
@@ -604,6 +748,7 @@ window.__ModuleLoader__.load({
           maxMessages: ctxSize,
           maxChars: maxChars,
           maxTokens: maxTokens,
+          historySize: historySize,
           reasoningEffort: effort,
         }).then(function (j) {
           if (j && j.ok) { notifySettings(j.effective); setMsg({ ok: true, text: tt(t, "settings.saved") }); setDirty(false); loadAll(); }
@@ -690,8 +835,12 @@ window.__ModuleLoader__.load({
             h("span", { style: SS.muted }, tt(t, "settings.maxCharsHint"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.maxTokens")),
-            h("input", { style: SS.input, type: "number", min: 16, max: 512, step: 8, value: maxTokens, disabled: !enabled || busy, onChange: function (e) { setMaxTokens(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 16, max: 1024, step: 8, value: maxTokens, disabled: !enabled || busy, onChange: function (e) { setMaxTokens(Number(e.target.value)); setDirty(true); } }),
             h("span", { style: SS.muted }, tt(t, "settings.maxTokensHint"))),
+          h("div", { style: SS.row },
+            h("span", { style: SS.label }, tt(t, "settings.historySize")),
+            h("input", { style: SS.input, type: "number", min: 1, max: 50, step: 1, value: historySize, disabled: !enabled || busy, onChange: function (e) { setHistorySize(Number(e.target.value)); setDirty(true); } }),
+            h("span", { style: SS.muted }, tt(t, "settings.historySizeHint", { storage: tt(t, storagePlatformKey()) }))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.effort")),
             h("select", { style: SS.select, value: effort, disabled: !enabled || busy, onChange: function (e) { setEffort(e.target.value); setDirty(true); } },
@@ -706,7 +855,47 @@ window.__ModuleLoader__.load({
             h("span", { style: SS.muted }, effortSourceHint(st, t))) ) : null,
 
         h("div", { style: SS.divider }),
-        h("p", { style: SS.muted }, runText(run, t)),
+        h("div", { style: SS.histHead },
+          h("span", { style: SS.sectionTitle, }, tt(t, "settings.historyTitle", { count: history.length, limit: historySize })),
+          history.length > 1
+            ? h("button", {
+              type: "button",
+              style: SS.histToggle,
+              "data-prompt-predict-history-toggle": "true",
+              onClick: function () { setListOpen(!listOpen); },
+            }, (listOpen ? "▾ " : "▸ ") + tt(t, listOpen ? "settings.historyCollapse" : "settings.historyExpand"))
+            : null),
+        // 真被截断时不用展开「高级」就能看到：直接给可执行的建议
+        run && run.truncated
+          ? h("p", { style: SS.warnBlock }, tt(t, "settings.truncatedWarn"))
+          : null,
+        history.length === 0
+          ? h("p", { style: SS.muted }, tt(t, "settings.historyEmpty"))
+          : h("div", null,
+            h("p", { style: SS.histHint }, tt(t, "settings.historyHint")),
+            (function () {
+              var shown = history.slice(0, listOpen ? historySize : 1);
+              var firstKey = shown.length ? String(shown[0].at) + "-0" : "";
+              var activeKey = openKey === null ? firstKey : openKey;
+              return shown.map(function (item, index) {
+                var key = String(item.at) + "-" + index;
+                var isOpen = activeKey === key;
+                return h("div", { key: key, style: SS.histRowWrap },
+                  h("div", {
+                    "data-prompt-predict-history-row": "true",
+                    style: Object.assign({}, SS.histRow, { cursor: "pointer" }),
+                    onClick: function () { setOpenKey(isOpen ? "" : key); },
+                    title: tt(t, "settings.historyToggle"),
+                  },
+                    h("span", { style: SS.histCaret }, isOpen ? "▾" : "▸"),
+                    h("span", { style: SS.histWhen }, new Date(item.at).toLocaleTimeString()),
+                    h("span", { style: SS.histWho, title: String(runSessionName(item) || "") }, runSessionName(item) || "-"),
+                    h("span", { style: SS.histWhat, title: historyDetail(item, t) }, historyDetail(item, t))),
+                  isOpen
+                    ? h("div", { style: SS.histText }, item.suggestion || tt(t, "settings.historyNoText"))
+                    : null);
+              });
+            })()),
 
         h("div", { style: { display: "flex", gap: 10, marginTop: 16 } },
           h("button", { style: dim(SS.btnPrimary, busy || !dirty), onClick: save, disabled: busy || !dirty }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
