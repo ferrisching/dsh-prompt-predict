@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [Unreleased]
+
+### Added
+
+- **Recent predictions list.** The settings page now keeps the last few runs (default 10, adjustable
+  1–50) with their time, session, provider/model, latency and flags (truncated, effort downgraded,
+  rerolled, failed). This replaces the old single "last prediction" line, which showed the same
+  run twice, and each row names the session it came from — which matters once several conversations
+  are open. Records are kept in the app's own local storage (Electron renderer on desktop, page `localStorage` on web; never uploaded), so they survive a page
+  reload; the list header shows how many of the configured cap are in use (`3/10`). The list itself
+  stays folded to the newest run — `▸ Show all` opens the rest — and the newest run's suggestion text is
+  expanded by default; every row has its own `▸` that expands that run's text and collapses whichever
+  row was open.
+
+### Fixed
+
+- **Suggestions no longer stop mid-sentence.** The output cap defaulted to 64 tokens, not enough for
+  one full Chinese sentence, so the ghost text could end abruptly. The default is now 256; a reply
+  that hits the cap (`finish.reason.kind === 'max-tokens'`) is retried once with a bigger budget
+  (at least 384, up to 1024); and if it still happens the ghost text carries a small **cut off · raise the output cap** marker
+  and the settings page says so above the recent-predictions list.
+
 ## [0.2.4] — 2026-10-18
 
 ### Fixed

@@ -153,21 +153,32 @@ function makeEnv() {
     dispatchEvent: (event) => { const fn = listeners.get(event.type); if (fn) fn(event); return true; },
     location: { href: 'http://127.0.0.1/', pathname: '/' },
   };
+  // localStorage 替身：插件把「最近预测」存在这里（两个模块实例共享同一份）
+  const storage = new Map();
+  const localStorage = {
+    getItem: (k) => (storage.has(k) ? storage.get(k) : null),
+    setItem: (k, v) => { storage.set(k, String(v)); },
+    removeItem: (k) => { storage.delete(k); },
+    clear: () => storage.clear(),
+  };
   const document = {
     querySelector: (sel) => (String(sel).includes('data-composer-input') ? editor : null),
     querySelectorAll: () => [],
     createElement: () => ({ style: {}, setAttribute() {}, appendChild() {} }),
   };
-  return { window, document, editor, listeners };
+  return { window: Object.assign(window, { localStorage }), document, editor, listeners, localStorage };
 }
 
 // ---------------- 加载 client.js ----------------
+let testUserAgent = 'node-test';
+let fetchResult = { suggestion: '先补测试再实现' };
 function loadClient(localeService) {
   const env = makeEnv();
   let registration = null;
   const sandbox = {
     window: env.window,
     document: env.document,
+    navigator: { get userAgent() { return testUserAgent; } },
     console,
     // 忽略延时（插件里有个 350ms 的「等回复停稳再预测」），让测试不必真等
     setTimeout: (fn) => setTimeout(fn, 0),
@@ -180,7 +191,7 @@ function loadClient(localeService) {
     AbortController,
     fetch: async () => ({
       ok: true,
-      json: async () => ({ ok: true, suggestion: '先补测试再实现', ms: 12, provider: 'provider-x', model: 'model-y' }),
+      json: async () => ({ ok: true, ms: 12, provider: 'provider-x', model: 'model-y', ...fetchResult }),
     }),
   };
   sandbox.globalThis = sandbox;
@@ -224,7 +235,7 @@ function setup(localeService) {
 }
 
 // ---------------- 用例 ----------------
-const { exports, react, registered } = setup();   // 不带 locale 服务：验证旧运行时下的中文兜底
+const { exports, react, registered, env } = setup();   // 不带 locale 服务：验证旧运行时下的中文兜底
 check('client.js 注册了模块', exports?.name === 'dsh-prompt-predict', String(exports?.name));
 check('inject 声明了 locale', Array.isArray(exports?.inject) && exports.inject.includes('locale'),
   JSON.stringify(exports?.inject));
@@ -248,7 +259,9 @@ check('注入了两个 slot', Boolean(registered['conversation.composer.dock'] &
 const dockComponent = registered['conversation.composer.dock'].Component;
 const makeProps = (draft) => ({
   sessionId: 'session-smoke',
-  useSession: (selector) => selector({ running: false, blank: false, removed: false }),
+  useSession: (selector) => selector({ running: false, blank: false, removed: false, title: '排查录屏' }),
+  // 会话标题来自客户端的 sessions store（Host 端没有标题字段）
+  useSessions: (selector) => selector({ sessions: [{ id: 'session-smoke', title: '排查录屏' }] }),
   useInput: (selector) => selector({ draft }),
   inputActions: { captureInsertion: () => ({}), insertText: () => true },
 });
@@ -298,8 +311,104 @@ await settings.settle();
 const settingsText = textOf(settings.tree);
 check('设置页渲染不抛异常', Boolean(settings.tree));
 check('设置页含关键设置项',
-  /启用联想/.test(settingsText) && /提供商/.test(settingsText) && /上次预测/.test(settingsText),
+  /启用联想/.test(settingsText) && /提供商/.test(settingsText) && /最近预测/.test(settingsText),
   settingsText.slice(0, 50));
+// 输出上限：提示里必须写明「被截断就手动调高」，且真的截断时设置页要就地给出可执行建议
+// 输出上限在「高级」里：先展开再看提示文案
+const advToggle = find(settings.tree, (n) => n.type === 'button' && typeof n.props?.children === 'string' && /高级/.test(n.props.children))[0];
+advToggle?.props?.onClick?.();
+await settings.settle();
+check('输出上限提示写明可手动调高',
+  /调高/.test(textOf(settings.tree)) && /1024/.test(textOf(settings.tree)),
+  '缺少「截断就调高」的提示');
+// 沙箱 window 的 dispatchEvent 只按 type 找监听器，插件从事件 detail 里读 { latest, history }
+// 真实链路：dock 写 localStorage 后广播事件，设置页从 localStorage 重读
+const truncatedEntry = { at: Date.now(), sessionId: 'session-smoke', session: '排查录屏', ms: 12, provider: 'p', model: 'm', truncated: true, suggestion: '这是被截断的半句' };
+const seeded = [truncatedEntry, { at: Date.now() - 60000, sessionId: 'session-smoke', session: '排查录屏', ms: 20, provider: 'p', model: 'm', suggestion: '第二条建议原文' }];
+env.localStorage.setItem('dsh-prompt-predict.history', JSON.stringify(seeded));
+env.window.dispatchEvent({ type: 'dsh-prompt-predict:run', detail: { latest: truncatedEntry, history: seeded } });
+await settings.settle();
+const afterTruncation = textOf(settings.tree);
+check('上次预测被截断时设置页就地提示调高上限',
+  /被输出上限截断/.test(afterTruncation) && /320/.test(afterTruncation),
+  afterTruncation.slice(0, 80));
+// 多条记录都必须在列表里（不是只显示最新一条）
+check('记录条数如实统计（2 条存在，默认只渲染 1 行）',
+  /[（(]2\/10[）)]/.test(afterTruncation) && (afterTruncation.match(/p \/ m/g) || []).length === 1,
+  afterTruncation.slice(0, 120));
+// 最近预测列表：dock 触发过的预测应当出现在设置页里，且带会话标识
+check('设置页列出最近预测（含会话标题）',
+  /provider-x/.test(settingsText) && /排查录屏/.test(settingsText) && !/session-/.test(settingsText),
+  settingsText.slice(-120));
+// 存储位置的说法必须跟运行环境一致（desktop=Electron / web=浏览器），不能写死一种
+{
+  check('web 端提示描述为浏览器 localStorage',
+    /浏览器的 localStorage|browser's localStorage/.test(textOf(settings.tree)),
+    textOf(settings.tree).slice(0, 60));
+  testUserAgent = 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Electron/39.0.0 Chrome/142';
+  const electronInst = setup();
+  const E = electronInst.registered['settings.section'].Component;
+  const electronView = mount(electronInst.react, E, () => ({}));
+  await electronView.settle();
+  // 输出上限 / 记录条数在「高级」里，先展开
+  find(electronView.tree, (n) => n.type === 'button' && typeof n.props?.children === 'string' && /高级/.test(n.props.children))[0]?.props?.onClick?.();
+  await electronView.settle();
+  const electronText = textOf(electronView.tree);
+  check('desktop(Electron) 端提示描述为应用内存储',
+    /Electron 渲染层|Electron renderer/.test(electronText) && !/浏览器的 localStorage/.test(electronText),
+    electronText.slice(0, 60));
+  testUserAgent = 'node-test';
+}
+
+// 两层折叠：① 列表默认只显示第一条（点 ▸ 展开全部）② 第一条详情默认展开，点别条时前一条收起
+{
+  const rows = () => find(settings.tree, (n) => n.props && n.props['data-prompt-predict-history-row'] === 'true');
+  const text = () => textOf(settings.tree);
+  check('默认只显示第一条，且第一条原文默认展开',
+    rows().length === 1 && /这是被截断的半句/.test(text()),
+    `rows=${rows().length} text=${text().slice(-80)}`);
+
+  const toggle = find(settings.tree, (n) => n.props && n.props['data-prompt-predict-history-toggle'] === 'true')[0];
+  check('列表折叠时提供「展开全部」', Boolean(toggle));
+  toggle?.props?.onClick?.();
+  await settings.settle();
+  check('展开全部后显示多条（第一条仍展开）',
+    rows().length === 2 && /这是被截断的半句/.test(text()) && !/第二条建议原文/.test(text()),
+    `rows=${rows().length}`);
+
+  rows()[1]?.props?.onClick?.();
+  await settings.settle();
+  check('点另一条时前一条自动收起',
+    /第二条建议原文/.test(text()) && !/这是被截断的半句/.test(text()),
+    text().slice(-100));
+
+  rows()[1]?.props?.onClick?.();
+  await settings.settle();
+  // 被截断时 ghost 上要直接标出来（不用去设置页查历史）
+react.reset();
+fetchResult = { suggestion: '刷新后验证了三点都正常，但展开全', truncated: true };
+const cutDock = mount(react, dockComponent, () => makeProps(''));
+await cutDock.settle();
+check('被截断的建议在 ghost 上标出「已截断」并提示调高上限',
+  cutDock.tree && /已截断/.test(textOf(cutDock.tree)) && /调高/.test(textOf(cutDock.tree)) && /max tokens/.test(textOf(cutDock.tree)),
+  cutDock.tree ? textOf(cutDock.tree).slice(0, 100) : 'no tree');
+fetchResult = { suggestion: '先补测试再实现' };
+
+check('再点同一条收起原文',
+    !/第二条建议原文/.test(text()) && !/这是被截断的半句/.test(text()),
+    text().slice(-80));
+
+  find(settings.tree, (n) => n.props && n.props['data-prompt-predict-history-toggle'] === 'true')[0]?.props?.onClick?.();
+  await settings.settle();
+  check('点「收起」回到只显示第一条', rows().length === 1, `rows=${rows().length}`);
+  // 重新展开列表，后面的用例还要用
+  find(settings.tree, (n) => n.props && n.props['data-prompt-predict-history-toggle'] === 'true')[0]?.props?.onClick?.();
+  await settings.settle();
+}
+// 「上次预测」状态行已并入列表：不能再单独出现一次（否则同一条记录显示两遍）
+check('最近预测不再重复显示在状态行',
+  (settingsText.match(/provider-x/g) || []).length === 1,
+  `出现 ${(settingsText.match(/provider-x/g) || []).length} 次`);
 
 // ⑥ 逐段采纳的前缀失效：把已采纳的那段删掉后，必须重新展示**完整**建议
 //    （手测录素材时发现的：旧实现会显示从中间截断的残句，按 Tab 只插入半句）

@@ -41,6 +41,8 @@ let captured;
 let streamCalls = [];
 let failWhenEffort = false;
 let variant = 0;
+let finishKind = 'stop';   // 模拟 finish.reason.kind：'stop' | 'max-tokens'
+let truncateNext = false;  // 让下一次调用返回「被输出上限截断」的半句
 const fakeSession = {
   id: 'session-test',
   requestHeader: () => ({ config: { provider: 'provider-current', model: 'model-current' } }),
@@ -51,6 +53,8 @@ const fakeSession = {
 };
 // 第二个会话专门用来测「去重 / reroll」：它们依赖「上一条建议」的记忆，用独立会话避免污染主流程
 const fakeSession2 = { ...fakeSession, id: 'session-dedupe' };
+// 干净会话：专门测「截断后放宽重试」，避免被「上一条建议」的去重记忆干扰
+const fakeSession3 = { ...fakeSession, id: 'session-widen' };
 const fakeCtx = {
   agentDefaultModel: { currentSelection: () => ({ provider: 'provider-default', model: 'model-default' }) },
   llm: {
@@ -70,8 +74,14 @@ const fakeCtx = {
         text = variant % 2 ? '"换个思路：先补测试再实现"' : '"先把边界情况列个清单"';
       }
       yield { type: 'block-start', block: { type: 'text' } };
+      if (truncateNext) {
+        truncateNext = false;
+        yield { type: 'text-delta', text: '"继续，直接实现' };
+        yield { type: 'finish', reason: { kind: 'max-tokens' } };
+        return;
+      }
       yield { type: 'text-delta', text };
-      yield { type: 'finish', reason: 'stop' };
+      yield { type: 'finish', reason: { kind: finishKind } };
     },
     listProviders() {
       return [
@@ -97,13 +107,25 @@ check('生成并归一化建议', predicted.suggestion === '继续，直接实�
 check('继承当前会话模型路由', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);
 check('限制输出 token', captured.maxTokens === 48, String(captured.maxTokens));
 check('标记辅助调用用途', captured.purpose === 'prompt-prediction' && captured.sessionId === 'session-test', `${captured.purpose}/${captured.sessionId}`);
+// 输出上限截断（finish.reason.kind === 'max-tokens'）与默认上限：新增调用会覆盖 captured，测完还原
+const optionsBeforeExtras = captured;
+finishKind = 'max-tokens';
+const cutRun = await predictNextPrompt(fakeCtx, fakeSession, { maxTokens: 16 });
+finishKind = 'stop';
+const defaultRun = await predictNextPrompt(fakeCtx, fakeSession);
+const defaultCap = captured.maxTokens;
+captured = optionsBeforeExtras;
+check('正常结束时 truncated=false', predicted.truncated === false, `truncated=${predicted.truncated}`);
+check('finish=max-tokens 时标记 truncated', cutRun.truncated === true && defaultRun.truncated === false,
+  `截断=${cutRun.truncated} 正常=${defaultRun.truncated}`);
+check('默认输出上限为 256 token', defaultCap === 256, `默认=${defaultCap}`);
 
 // Host 路由端到端（本地 HTTP）
 let route;
 let cleaned = false;
 const cleanups = [];
 const ctx = {
-  sessions: { get: (id) => (id === 'session-test' ? fakeSession : id === 'session-dedupe' ? fakeSession2 : undefined) },
+  sessions: { get: (id) => (id === 'session-test' ? fakeSession : id === 'session-dedupe' ? fakeSession2 : id === 'session-widen' ? fakeSession3 : undefined) },
   llm: fakeCtx.llm,
   agentDefaultModel: fakeCtx.agentDefaultModel,
   connection: { requestRejection: () => undefined },
@@ -139,7 +161,19 @@ check('状态接口返回结构', status.status === 200
   && status.json.effective?.enabled === true, JSON.stringify(status.json.effective ?? status.json));
 const suggestion = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
 check('建议接口返回预测', suggestion.status === 200 && suggestion.json.suggestion === '继续，直接实现并安装插件', JSON.stringify(suggestion.json));
+check('建议响应带上会话标识', suggestion.json.sessionId === 'session-test', String(suggestion.json.sessionId));
 check('默认跟随当前会话模型', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);
+// 输出上限截断时，路由要自动放宽上限重问一次，最终返回完整建议而不是半句
+const callsBeforeWiden = streamCalls.length;
+truncateNext = true;
+const widened = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-widen' });
+check('截断时自动放宽上限重试',
+  widened.json.ok === true
+  && /直接实现并安装插件/.test(String(widened.json.suggestion))
+  && widened.json.truncated === false
+  && streamCalls.length - callsBeforeWiden >= 2,
+  `suggestion=${widened.json.suggestion} truncated=${widened.json.truncated} 调用=${streamCalls.length - callsBeforeWiden}`);
+
 const bad = await request('/dsh-prompt-predict/suggest', 'POST', {});
 check('缺 sessionId → 400', bad.status === 400, `${bad.status}`);
 
@@ -184,6 +218,15 @@ check('auto 路由继承当前会话模型', captured.provider === 'provider-cur
 const effortOnAuto = await request('/dsh-prompt-predict/settings', 'POST', { reasoningEffort: 'off' });
 check('跟随会话模型时不按固定模型拦思考深度', effortOnAuto.json.ok === true && effortOnAuto.json.effective.reasoningEffort === 'off', String(effortOnAuto.json.reason ?? effortOnAuto.json.effective?.reasoningEffort));
 
+// 记录条数（客户端历史列表的上限）：默认 10，可调 1–50
+const historyDefault = await request('/dsh-prompt-predict/status');
+check('记录条数默认 10', historyDefault.json.effective?.historySize === 10, String(historyDefault.json.effective?.historySize));
+const historySet = await request('/dsh-prompt-predict/settings', 'POST', { historySize: 5 });
+check('记录条数可调整', historySet.json.ok === true && historySet.json.effective.historySize === 5, String(historySet.json.effective?.historySize));
+const historyBad = await request('/dsh-prompt-predict/settings', 'POST', { historySize: 0 });
+check('记录条数越界被拒', historyBad.json.ok === false && /1–50|1-50/.test(String(historyBad.json.reason)), String(historyBad.json.reason));
+await request('/dsh-prompt-predict/settings', 'POST', { historySize: 10 });
+
 const disabled = await request('/dsh-prompt-predict/settings', 'POST', { enabled: false });
 check('关闭联想后生效', disabled.json.ok === true && disabled.json.effective.enabled === false, String(disabled.json.effective?.enabled));
 const blocked = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
@@ -221,6 +264,12 @@ check('上下文预算越界被拒绝', badChars.json.ok === false && /上下文
 
 const badTokens = await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 9999 });
 check('输出上限越界被拒绝', badTokens.json.ok === false && /输出上限/.test(badTokens.json.reason ?? ''), String(badTokens.json.reason));
+const maxTokens = await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 1024 });
+check('输出上限可以调到 1024', maxTokens.json.ok === true && maxTokens.json.effective.maxTokens === 1024,
+  String(maxTokens.json.reason ?? maxTokens.json.effective?.maxTokens));
+const overTokens = await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 1025 });
+check('输出上限 1025 被拒绝', overTokens.json.ok === false && /1024/.test(overTokens.json.reason ?? ''), String(overTokens.json.reason));
+await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 256 });
 
 // 降级重试：档位不被真实模型支持时自动丢掉档位再试，否则用户只会看到「永远没有建议」
 await request('/dsh-prompt-predict/settings', 'POST', { provider: 'provider-effort', model: 'model-r', reasoningEffort: 'high' });
