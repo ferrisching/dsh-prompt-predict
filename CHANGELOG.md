@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.6] — 2026-10-21
+
+### Added
+
+- **Suggestion language.** A new setting decides which language the ghost suggestion is written in:
+  `Auto` (default) follows the conversation, or you can pin a language and every suggestion comes
+  back in it — handy when you write in one language but want practice material in another. The
+  dropdown lists 14 mainstream languages up front and folds the rest behind "More languages…".
+  Languages with regional variants get a second **Region** dropdown: Simplified Chinese (Mainland
+  China / Singapore / Malaysia), Traditional Chinese (Taiwan / Hong Kong), English (US / UK /
+  Australia / Canada), Portuguese (Brazil / Portugal), Spanish (Spain / Latin America (neutral) / Mexico / Argentina / Colombia),
+  French (France / Canada), German (Germany / Austria / Switzerland) and Dutch (Netherlands /
+  Belgium). Each list starts with that language's CLDR default region, so there is no ambiguous
+  "generic" entry. Esperanto is included as well. The variant is named
+  explicitly in the prompt — *Traditional Chinese (Taiwan)*, *British English*, *Simplified Chinese* —
+  so the model picks the right script, but **any valid language code is still accepted**; names are resolved
+  with `Intl.DisplayNames` instead of a hand-written table, so nothing is hard-coded to that list. The
+  choice is persisted with the other settings and passed to the host, which names the target language
+  in the system prompt.
+- UI dictionaries are still shipped for the languages DSH itself supports (`zh` / `en`); the locale
+  registration now passes every dictionary instead of hard-coding the two, so a future DSH language
+  needs no client change.
+
+### Fixed
+
+- **Suggestions follow the conversation language.** The default system prompt was written in Chinese
+  and only asked the model to "use the user's recent main language", so the model followed the prompt
+  and every non-Chinese conversation got a Chinese suggestion (issue #1: a Russian chat got Russian
+  history and a Chinese ghost). The prompt is now English and names the target language explicitly,
+  detected from the conversation — by majority vote over the last few user messages, so pasting a
+  block of English logs does not flip a Russian conversation to English. The model's own
+  "Suggestion:" / "Prédiction :" prefixes are stripped before the ghost is shown.
+
 ## [0.2.5] — 2026-10-20
 
 ### Added

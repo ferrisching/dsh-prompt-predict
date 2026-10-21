@@ -68,6 +68,7 @@ window.__ModuleLoader__.load({
         "run.effortDropped": "已自动降级思考档位",
         "run.dedupRetry": "已换一条",
         "run.truncated": "被输出上限截断",
+        "run.ms": "毫秒",
         "settings.truncatedWarn": "最近一次预测被输出上限截断了：把上面的「输出上限」调高到 320 或更大，点「保存」，再触发一次联想试试。",
         "run.session": "会话 {name}",
         "run.failedShort": "失败 — {reason}",
@@ -78,6 +79,11 @@ window.__ModuleLoader__.load({
         "settings.historyCollapse": "收起",
         "settings.historyNoText": "这次预测没有记录到建议原文（功能上线前的旧记录）",
         "settings.historyEmpty": "还没有记录：触发一次联想后，这里会列出最近几次的会话、模型、耗时和异常标记。",
+        "settings.suggestionLanguage": "建议语言",
+        "settings.suggestionLanguageHint": "默认跟随对话语言；固定一种后，所有建议都用它书写",
+        "settings.languageAuto": "自动（跟随对话）",
+        "settings.languageMore": "更多语言…（另有 {count} 种）",
+        "settings.languageRegion": "地区",
         "settings.historySize": "记录条数",
         "settings.historySizeHint": "保留最近多少次预测记录（1–50）。记录存在{storage}，本机、不上传，刷新/重启后仍在",
         "storage.electron": "本应用内（Electron 渲染层存储）",
@@ -134,6 +140,7 @@ window.__ModuleLoader__.load({
         "run.effortDropped": "reasoning level auto-downgraded",
         "run.dedupRetry": "rerolled",
         "run.truncated": "hit the output cap",
+        "run.ms": "ms",
         "settings.truncatedWarn": "The latest prediction hit the output cap: raise Output cap above to 320 or higher, click Save, then trigger a prediction again.",
         "run.session": "session {name}",
         "run.failedShort": "failed — {reason}",
@@ -144,6 +151,11 @@ window.__ModuleLoader__.load({
         "settings.historyCollapse": "Collapse",
         "settings.historyNoText": "No suggestion text recorded for this run (older record)",
         "settings.historyEmpty": "No records yet: trigger a prediction and this list shows the last few with their session, model, latency and flags.",
+        "settings.suggestionLanguage": "Suggestion language",
+        "settings.suggestionLanguageHint": "Follows the conversation by default; pin one language to always get suggestions in it",
+        "settings.languageAuto": "Auto (follow the conversation)",
+        "settings.languageMore": "More languages… ({count} more)",
+        "settings.languageRegion": "Region",
         "settings.historySize": "History size",
         "settings.historySizeHint": "how many recent predictions to keep (1-50). Stored in {storage}; local only, never uploaded, survives reloads",
         "storage.electron": "the app's own storage (Electron renderer)",
@@ -153,6 +165,86 @@ window.__ModuleLoader__.load({
       },
     };
 
+    // 建议语言：auto = 跟随对话；其余候选由 Host 提供（status.languages），
+    // 标签用 Intl.DisplayNames 现算母语名——不限定固定几种，也不用手写映射表。
+    // 兜底候选（Host 的 /status.languages 是权威来源，这只是在旧 Host / 请求失败时保证下拉可用；
+    // client-render 用例会校验这份清单与 lib/predict.mjs 的 SUGGESTION_LANGUAGES 一致）
+    var DEFAULT_LANGUAGE_CODES = [
+      "zh", "zh-TW", "zh-HK", "en", "ja", "ko", "ru", "fr", "de", "es", "pt", "it",
+      "ar", "hi", "th", "vi", "tr", "nl", "pl", "uk", "sv", "da",
+      "nb", "fi", "cs", "sk", "hu", "ro", "bg", "el", "he", "fa",
+      "ur", "bn", "ta", "te", "ml", "kn", "gu", "mr", "pa", "id",
+      "ms", "tl", "sw", "am", "sr", "hr", "sl", "et", "lv", "lt",
+      "ka", "hy", "az", "kk", "uz", "mn", "ne", "si", "km", "lo",
+      "my", "ca", "gl", "eu", "is", "ga", "cy", "af", "zu", "yo", "eo",
+    ];
+    // 主流「语言」列表（地区细分放到第二级下拉里，避免一长串 zh-TW / zh-HK / en-US…）
+    var MAINSTREAM_LANGUAGE_CODES = ["zh", "zh-Hant", "en", "ja", "ko", "ru", "fr", "de", "nl", "es", "pt", "it", "ar", "hi"];
+    var MORE_LANGUAGES = "__more__";
+    // 需要细分地区的语言家族：base → 变体列表（第一项为「通用」）
+    var LANGUAGE_FAMILIES = {
+      zh: [["zh-CN", ""], ["zh-SG", ""], ["zh-MY", ""]],
+      "zh-Hant": [["zh-TW", ""], ["zh-HK", ""]],
+      en: [["en-US", ""], ["en-GB", ""], ["en-AU", ""], ["en-CA", ""]],
+      pt: [["pt-BR", ""], ["pt-PT", ""]],
+      es: [["es-ES", ""], ["es-419", ""], ["es-MX", ""], ["es-AR", ""], ["es-CO", ""]],
+      fr: [["fr-FR", ""], ["fr-CA", ""]],
+      de: [["de-DE", ""], ["de-AT", ""], ["de-CH", ""]],
+      nl: [["nl-NL", ""], ["nl-BE", ""]],
+    };
+    // 家族 → 它管辖的所有代码（这些代码不在主下拉里单独出现）
+    var MANAGED_CODES = Object.keys(LANGUAGE_FAMILIES).reduce(function (acc, base) {
+      LANGUAGE_FAMILIES[base].forEach(function (item) { acc[item[0]] = true; });
+      return acc;
+    }, {});
+    function languageFamily(code) {
+      if (!code || code === "auto") return "auto";
+      var keys = Object.keys(LANGUAGE_FAMILIES);
+      for (var i = 0; i < keys.length; i += 1) {
+        var variants = LANGUAGE_FAMILIES[keys[i]];
+        for (var j = 0; j < variants.length; j += 1) if (variants[j][0] === code) return keys[i];
+      }
+      return code;
+    }
+    function familyVariants(base) { return LANGUAGE_FAMILIES[base] || [["", ""]]; }
+    // 已保存的「通用」值（en / pt / zh-Hant …）统一落到该语言的默认地区，避免下拉显示与实际值不一致
+    function normalizeSavedLanguage(code) {
+      if (!code || code === "auto") return "auto";
+      var variants = familyVariants(languageFamily(code));
+      if (variants.length > 1 && !variants.some(function (item) { return item[0] === code; })) {
+        return variants[0][0];
+      }
+      return code;
+    }
+    var LANGUAGE_LABEL_OVERRIDES = {
+      zh: "简体中文",
+      "zh-Hant": "繁體中文",
+    };
+    // 个别地区的 CLDR 名字太长（HK = 中国香港特别行政区 / Hong Kong SAR China），下拉里显示不下，
+    // 这里只覆盖必要的几个，其余仍由 Intl 现算。
+    var REGION_LABEL_OVERRIDES = {
+      CN: { zh: "中国大陆", en: "Mainland China" },
+      HK: { zh: "香港", en: "Hong Kong" },
+    };
+    function regionLabel(code, base, t) {
+      var region = String(code).split("-")[1];
+      var override = REGION_LABEL_OVERRIDES[region];
+      if (override) return override[currentLang() === "zh" ? "zh" : "en"];
+      try {
+        var name = new Intl.DisplayNames([uiLocale() || "en"], { type: "region" }).of(region);
+        if (typeof name === "string" && name && name !== region) return name;
+      } catch { /* 回退到代码 */ }
+      return region || code;
+    }
+    function languageLabel(code) {
+      if (LANGUAGE_LABEL_OVERRIDES[code]) return LANGUAGE_LABEL_OVERRIDES[code];
+      try {
+        var name = new Intl.DisplayNames([code], { type: "language" }).of(code);
+        if (typeof name === "string" && name && name !== code) return name;
+      } catch { /* 回退到代码 */ }
+      return code;
+    }
+
     var EFFORT_LABEL_KEYS = {
       off: "effort.off", none: "effort.off", minimal: "effort.minimal",
       low: "effort.low", medium: "effort.medium", high: "effort.high", max: "effort.max",
@@ -161,7 +253,12 @@ window.__ModuleLoader__.load({
     // tt() 自己实现 {name} 插值，所以不依赖 t 是否支持参数，词序完全交给各语言的模板。
     var boundTranslate = null;
     var localeService = null;
-    function fallbackTranslate(key) { return (DICT.zh && DICT.zh[key]) || key; }
+    function fallbackTranslate(key) {
+      // 当前界面语言优先，其次英文，最后中文——新语言漏词时也不会掉回中文
+      var lang = currentLang() || "zh";
+      var own = DICT[lang];
+      return (own && own[key]) || (DICT.en && DICT.en[key]) || (DICT.zh && DICT.zh[key]) || key;
+    }
 
     /**
      * 当前界面语言。Host 端要靠它来决定用哪种语言回错误原因，所以每次请求都重新探：
@@ -173,16 +270,23 @@ window.__ModuleLoader__.load({
       try {
         var snap = localeService && typeof localeService.getSnapshot === "function" ? localeService.getSnapshot() : null;
         var v = snap && (snap.active || snap.locale || snap.id);
-        if (typeof v === "string" && v) return v.toLowerCase().indexOf("zh") === 0 ? "zh" : "en";
+        if (typeof v === "string" && v) {
+          var low = v.toLowerCase();
+          return low.indexOf("zh") === 0 ? "zh" : "en";   // 与 DSH 界面语言保持一致
+        }
       } catch { /* 下面再试比对 */ }
       try {
         if (boundTranslate) {
           var probe = boundTranslate("settings.title");
-          if (probe === DICT.en["settings.title"]) return "en";
+          if (DICT.en && probe === DICT.en["settings.title"]) return "en";
         }
       } catch { /* 保守回中文 */ }
       return "zh";
     }
+    // 界面语言对应的 BCP-47 标记：时间等格式化跟界面语言走，而不是系统语言。
+    var UI_LOCALES = { zh: "zh-CN", en: "en-US" };
+    function uiLocale() { return UI_LOCALES[currentLang()] || undefined; }
+
     function tt(t, key, vars) {
       var fn = t || boundTranslate || fallbackTranslate;
       var text = null;
@@ -218,7 +322,7 @@ window.__ModuleLoader__.load({
       histRowWrap: { borderBottom: "1px solid #f1f1f5", padding: "2px 0" },
       histRow: { display: "flex", gap: 10, alignItems: "baseline", fontSize: 12.5, lineHeight: 1.9 },
       histCaret: { color: "#9ca3af", flex: "none", width: 10, fontSize: 11 },
-      histText: { whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#374151", fontSize: 12.5, lineHeight: 1.7, margin: "2px 0 10px 20px", padding: "8px 10px", borderRadius: 8, background: "#f8fafc" },
+      histText: { whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#374151", fontSize: 12.5, lineHeight: 1.7, marginBlock: "2px 10px", marginInlineStart: 20, padding: "8px 10px", borderRadius: 8, background: "#f8fafc" },
       histWhen: { color: "#6b7280", flex: "none", width: 76 },
       histWho: { color: "#111827", flex: "none", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
       histWhat: { color: "#6b7280", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
@@ -372,7 +476,7 @@ window.__ModuleLoader__.load({
       if (!item) return "";
       if (item.error) return tt(t, "run.failedShort", { reason: String(item.error).slice(0, 80) });
       var bits = [(item.provider || "?") + " / " + (item.model || "?")];
-      if (typeof item.ms === "number") bits.push(item.ms + " ms");
+      if (typeof item.ms === "number") bits.push(item.ms + " " + tt(t, "run.ms"));
       if (item.effortDropped) bits.push(tt(t, "run.effortDropped"));
       if (item.dedupRetry) bits.push(tt(t, "run.dedupRetry"));
       if (item.truncated) bits.push(tt(t, "run.truncated"));
@@ -434,6 +538,7 @@ window.__ModuleLoader__.load({
         role: "status",
         "aria-live": "polite",
         "data-prompt-predict-ghost": "true",
+        dir: "auto",
         style: {
           position: "fixed", left: pos.left, top: pos.top, zIndex: 60,
           width: pos.width || undefined,
@@ -447,7 +552,7 @@ window.__ModuleLoader__.load({
           style: { color: "#9aa3b2" },
         }, suggestion),
         h("span", {
-          style: { display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 8, whiteSpace: "nowrap", verticalAlign: "middle" },
+          style: { display: "inline-flex", alignItems: "center", gap: 6, marginInlineStart: 8, whiteSpace: "nowrap", verticalAlign: "middle" },
         },
           h("button", {
             type: "button", onClick: onAccept,
@@ -672,6 +777,9 @@ window.__ModuleLoader__.load({
       var _mc = useState(6000), maxChars = _mc[0], setMaxChars = _mc[1];
       var _mt = useState(256), maxTokens = _mt[0], setMaxTokens = _mt[1];
       var _hs = useState(10), historySize = _hs[0], setHistorySize = _hs[1];
+      var _sl = useState("auto"), suggestionLanguage = _sl[0], setSuggestionLanguage = _sl[1];
+      var _lo = useState(DEFAULT_LANGUAGE_CODES), languageCodes = _lo[0], setLanguageCodes = _lo[1];
+      var _lx = useState(false), languagesExpanded = _lx[0], setLanguagesExpanded = _lx[1];
       var _ef = useState("off"), effort = _ef[0], setEffort = _ef[1];
       var _eo = useState([]), effortOptions = _eo[0], setEffortOptions = _eo[1];
       var _hist = useState(runHistory.slice()), history = _hist[0], setHistory = _hist[1];
@@ -697,6 +805,8 @@ window.__ModuleLoader__.load({
           setMaxChars(eff.maxChars || 6000);
           setMaxTokens(eff.maxTokens || 256);
           setHistorySize(eff.historySize || 10);
+          setSuggestionLanguage(normalizeSavedLanguage(eff.suggestionLanguage || "auto"));
+          if (Array.isArray(j.languages) && j.languages.length) setLanguageCodes(j.languages);
           historyLimit = eff.historySize || 10;
           var stored = readStoredHistory();
           if (stored.length) setHistory(stored);
@@ -749,6 +859,7 @@ window.__ModuleLoader__.load({
           maxChars: maxChars,
           maxTokens: maxTokens,
           historySize: historySize,
+          suggestionLanguage: suggestionLanguage,
           reasoningEffort: effort,
         }).then(function (j) {
           if (j && j.ok) { notifySettings(j.effective); setMsg({ ok: true, text: tt(t, "settings.saved") }); setDirty(false); loadAll(); }
@@ -771,11 +882,11 @@ window.__ModuleLoader__.load({
         }).finally(function () { setBusy(false); });
       }
 
-      if (!st) return h("div", { style: SS.card }, h("p", { style: SS.muted }, tt(t, "settings.loading")));
+      if (!st) return h("div", { style: SS.card, dir: "auto" }, h("p", { style: SS.muted }, tt(t, "settings.loading")));
       var eff = st.effective || {};
       var enabled = eff.enabled !== false;
 
-      return h("div", { style: SS.card },
+      return h("div", { style: SS.card, dir: "auto" },
         h("p", { style: SS.title }, tt(t, "settings.title")),
         h("p", { style: SS.muted }, tt(t, "settings.desc")),
 
@@ -852,7 +963,55 @@ window.__ModuleLoader__.load({
                   return h("option", { key: id, value: id }, tt(t, EFFORT_LABEL_KEYS[id] || id) + (id === "off" ? tt(t, "settings.effortFastest") : ""));
                 });
               })()),
-            h("span", { style: SS.muted }, effortSourceHint(st, t))) ) : null,
+            h("span", { style: SS.muted }, effortSourceHint(st, t))),
+          h("div", { style: SS.row },
+            h("span", { style: SS.label }, tt(t, "settings.suggestionLanguage")),
+            h("select", {
+              style: SS.select, value: languageFamily(suggestionLanguage), disabled: !enabled || busy,
+              "data-prompt-predict-language": "true",
+              onChange: function (e) {
+                var next = e.target.value;
+                if (next === MORE_LANGUAGES) { setLanguagesExpanded(true); return; }   // 只展开，不改选择
+                var variants = familyVariants(next);
+                var keep = variants.some(function (item) { return item[0] === suggestionLanguage; });
+                setSuggestionLanguage(variants.length > 1 ? (keep ? suggestionLanguage : variants[0][0]) : next);
+                setDirty(true);
+              },
+            },
+              (function () {
+                var shownBases = MAINSTREAM_LANGUAGE_CODES.slice();
+                var extras = languageCodes.filter(function (code) {
+                  return !MANAGED_CODES[code] && shownBases.indexOf(code) === -1;
+                });
+                var options = [h("option", { key: "auto", value: "auto" }, tt(t, "settings.languageAuto"))];
+                shownBases.forEach(function (code) {
+                  options.push(h("option", { key: code, value: code }, languageLabel(code)));
+                });
+                if (languagesExpanded) {
+                  extras.forEach(function (code) {
+                    options.push(h("option", { key: code, value: code }, languageLabel(code)));
+                  });
+                } else if (extras.length) {
+                  options.push(h("option", { key: MORE_LANGUAGES, value: MORE_LANGUAGES }, tt(t, "settings.languageMore", { count: extras.length })));
+                }
+                return options;
+              })()),
+            (function () {
+              var variants = familyVariants(languageFamily(suggestionLanguage));
+              if (variants.length < 2) return null;
+              var current = variants.some(function (item) { return item[0] === suggestionLanguage; })
+                ? suggestionLanguage : variants[0][0];
+              return h("select", {
+                style: Object.assign({}, SS.select, { maxWidth: 140 }),
+                value: current, disabled: !enabled || busy,
+                "data-prompt-predict-language-region": "true",
+                title: tt(t, "settings.languageRegion"),
+                onChange: function (e) { setSuggestionLanguage(e.target.value); setDirty(true); },
+              }, variants.map(function (item) {
+                return h("option", { key: item[0], value: item[0] }, regionLabel(item[0], languageFamily(suggestionLanguage), t));
+              }));
+            })(),
+            h("span", { style: SS.muted }, tt(t, "settings.suggestionLanguageHint"))) ) : null,
 
         h("div", { style: SS.divider }),
         h("div", { style: SS.histHead },
@@ -888,7 +1047,7 @@ window.__ModuleLoader__.load({
                     title: tt(t, "settings.historyToggle"),
                   },
                     h("span", { style: SS.histCaret }, isOpen ? "▾" : "▸"),
-                    h("span", { style: SS.histWhen }, new Date(item.at).toLocaleTimeString()),
+                    h("span", { style: SS.histWhen }, new Date(item.at).toLocaleTimeString(uiLocale())),
                     h("span", { style: SS.histWho, title: String(runSessionName(item) || "") }, runSessionName(item) || "-"),
                     h("span", { style: SS.histWhat, title: historyDetail(item, t) }, historyDetail(item, t))),
                   isOpen
@@ -908,7 +1067,10 @@ window.__ModuleLoader__.load({
       // 没有该服务（旧运行时）时保持中文兜底，不会退化成显示 key。
       try {
         if (ctx.locale && typeof ctx.locale.register === "function") {
-          ctx.locale.register(NS, { zh: DICT.zh, en: DICT.en });
+          // 注册全部语言的词典（漏注册会让该语言的界面整屏退回中文）
+          var dicts = {};
+          Object.keys(DICT).forEach(function (lang) { dicts[lang] = DICT[lang]; });
+          ctx.locale.register(NS, dicts);
           boundTranslate = ctx.locale.bind(NS);
           localeService = ctx.locale;      // currentLang() 要读它的快照
         }

@@ -248,10 +248,22 @@ check('注入了两个 slot', Boolean(registered['conversation.composer.dock'] &
   const marker = '    // ---------- 设置页样式 ----------';
   const [head, body] = src.split(marker);
   const keysIn = (block) => new Set([...block.matchAll(/"([\w.]+)":\s*"/g)].map((m) => m[1]));
-  const zh = keysIn(head.slice(head.indexOf('      zh: {'), head.indexOf('      en: {')));
-  const en = keysIn(head.slice(head.indexOf('      en: {'), head.indexOf('    };')));
+  // 只保留 DSH 界面实际支持的语言（中/英）——多余的语言写了也不会被用到
+  const LANGS = ['zh', 'en'];
+  const dicts = {};
+  for (const lang of LANGS) {
+    const from = head.indexOf(`      ${lang}: {`);
+    const next = LANGS.slice(LANGS.indexOf(lang) + 1)
+      .map((l) => head.indexOf(`      ${l}: {`)).filter((i) => i > from);
+    const to = next.length ? Math.min(...next) : head.indexOf('    };');
+    dicts[lang] = keysIn(head.slice(from, to));
+  }
+  const zh = dicts.zh;
   const used = new Set([...body.matchAll(/tt\((?:t|boundTranslate),\s*"([\w.]+)"/g)].map((m) => m[1]));
-  check('词典中英 key 一一对应', zh.size === en.size && [...zh].every((k) => en.has(k)), `zh=${zh.size} en=${en.size}`);
+  const asymmetric = LANGS.filter((lang) => dicts[lang].size !== zh.size || [...zh].some((k) => !dicts[lang].has(k)));
+  check('中英词典 key 一一对应',
+    asymmetric.length === 0,
+    asymmetric.length ? asymmetric.map((l) => `${l}=${dicts[l].size}`).join(' ') : LANGS.map((l) => `${l}=${dicts[l].size}`).join(' '));
   const missing = [...used].filter((k) => !zh.has(k));
   check('代码用到的 key 都在词典里', missing.length === 0, missing.join(', ') || `${used.size} keys`);
 }
@@ -321,6 +333,111 @@ await settings.settle();
 check('输出上限提示写明可手动调高',
   /调高/.test(textOf(settings.tree)) && /1024/.test(textOf(settings.tree)),
   '缺少「截断就调高」的提示');
+// 建议语言：默认 auto，下拉里含固定语言选项（同在「高级」里）
+const langSelect = find(settings.tree, (n) => n.type === 'select'
+  && (n.props?.children || []).some((c) => c?.props?.value === 'ru'))[0];
+const langValues = (langSelect?.props?.children || []).map((c) => c?.props?.value);
+// 兜底候选必须与 Host 的清单一致，否则旧 Host / 请求失败时「更多语言…」会空着
+{
+  const clientSrc = readFileSync(join(here, '..', 'client', 'client.js'), 'utf8');
+  const hostSrc = readFileSync(join(here, '..', 'lib', 'predict.mjs'), 'utf8');
+  const grab = (text, startMarker, endMarker) => {
+    const from = text.indexOf(startMarker);
+    const to = text.indexOf(endMarker, from);
+    return new Set([...text.slice(from, to).matchAll(/'([a-z]{2,3}(?:-[A-Za-z0-9]+)?)'|"([a-z]{2,3}(?:-[A-Za-z0-9]+)?)"/g)]
+      .map((m) => m[1] || m[2]));
+  };
+  const host = grab(hostSrc, 'SUGGESTION_LANGUAGES = [', '];');
+  const client = grab(clientSrc, 'DEFAULT_LANGUAGE_CODES = [', '];');
+  check('客户端兜底语言清单与 Host 一致',
+    host.size === client.size && [...host].every((code) => client.has(code)),
+    `host=${host.size} client=${client.size}`);
+}
+
+// 语言下拉：主流语言直接显示（地区细分放二级下拉），其余收进「更多…」
+{
+  const many = ['zh', 'zh-TW', 'zh-HK', 'en', 'ja', 'ko', 'ru', 'fr', 'de', 'nl', 'es', 'pt', 'it', 'ar', 'hi', 'uk', 'pl', 'sv'];
+  fetchResult = { suggestion: '先补测试再实现', languages: many };
+  const inst = setup();
+  const C = inst.registered['settings.section'].Component;
+  const view = mount(inst.react, C, () => ({}));
+  await view.settle();
+  find(view.tree, (n) => n.type === 'button' && typeof n.props?.children === 'string' && /高级/.test(n.props.children))[0]?.props?.onClick?.();
+  await view.settle();
+  const pick = () => find(view.tree, (n) => n.props && n.props['data-prompt-predict-language'] === 'true')[0];
+  const region = () => find(view.tree, (n) => n.props && n.props['data-prompt-predict-language-region'] === 'true')[0];
+  const values = (node) => (node?.props?.children || []).map((c) => c?.props?.value);
+
+  check('主流语言直接显示，地区变体不占主列表',
+    values(pick()).includes('zh-Hant') && values(pick()).includes('nl') && values(pick()).includes('ar')
+    && !values(pick()).includes('zh-TW') && !values(pick()).includes('zh-HK') && !values(pick()).includes('en-US')
+    && values(pick()).includes('__more__'),
+    values(pick()).join(','));
+  check('未选家族时不显示地区下拉', !region(), 'unexpected region select');
+
+  pick()?.props?.onChange?.({ target: { value: 'zh-Hant' } });
+  await view.settle();
+  check('选「繁體中文」后出现地区下拉（台灣/香港，台灣在前）',
+    Boolean(region()) && values(region())[0] === 'zh-TW' && values(region()).includes('zh-HK')
+    && !values(region()).includes('zh-Hant') && region().props.value === 'zh-TW',
+    region() ? values(region()).join(',') : 'missing');
+
+  region()?.props?.onChange?.({ target: { value: 'zh-TW' } });
+  await view.settle();
+  check('冗长的地区名被缩短（香港/中国大陆）',
+    (() => {
+      const node = find(view.tree, (n) => n.props && n.props['data-prompt-predict-language-region'] === 'true')[0];
+      const opts = (node?.props?.children || []);
+      const labels = opts.map((c) => (typeof c?.props?.children === 'string' ? c.props.children : ''));
+      return labels.some((x) => x === '香港') && !labels.some((x) => /特别行政区/.test(x));
+    })(), '香港 label check');
+
+  check('选地区后保存的是 zh-TW 且主下拉仍显示繁體中文',
+    pick().props.value === 'zh-Hant' && region().props.value === 'zh-TW',
+    `${pick().props.value}/${region().props.value}`);
+
+  pick()?.props?.onChange?.({ target: { value: 'en' } });
+  await view.settle();
+  check('英语也有地区细分（美/英/澳/加，美国在前）',
+    values(region())[0] === 'en-US' && values(region()).includes('en-GB') && region().props.value === 'en-US',
+    values(region()).join(','));
+
+  // 简体中文也有地区用词差异（大陆/新马）
+  pick()?.props?.onChange?.({ target: { value: 'zh' } });
+  await view.settle();
+  check('简体中文地区：中国大陆排第一、没有「通用」',
+    Boolean(region()) && values(region())[0] === 'zh-CN'
+    && ['zh-CN', 'zh-SG', 'zh-MY'].every((c) => values(region()).includes(c))
+    && !values(region()).includes('zh'),
+    values(region()).join(','));
+
+  // 其它有地区差异的语言也要有二级下拉
+  for (const [base, expected] of [
+    ['pt', ['pt-BR', 'pt-PT']],
+    ['es', ['es-ES', 'es-419', 'es-MX', 'es-AR', 'es-CO']],
+    ['fr', ['fr-FR', 'fr-CA']],
+    ['de', ['de-DE', 'de-AT', 'de-CH']],
+    ['nl', ['nl-NL', 'nl-BE']],
+  ]) {
+    pick()?.props?.onChange?.({ target: { value: base } });
+    await view.settle();
+    const got = values(region());
+    check(`${base} 有地区细分（${expected.join('/')}，无「通用」）`,
+      Boolean(region()) && expected.every((code) => got.includes(code)) && got[0] === expected[0]
+      && !got.includes(base),
+      got.join(','));
+  }
+
+  pick()?.props?.onChange?.({ target: { value: '__more__' } });
+  await view.settle();
+  check('点「更多语言…」后展开其余语言', values(pick()).includes('uk') && !values(pick()).includes('__more__'),
+    values(pick()).join(','));
+  fetchResult = { suggestion: '先补测试再实现' };
+}
+
+check('设置页有「建议语言」下拉且默认 auto',
+  Boolean(langSelect) && langSelect.props.value === 'auto' && langValues.includes('zh') && langValues.includes('ru'),
+  langSelect ? `value=${langSelect.props.value} options=${langValues.join(',')}` : 'missing');
 // 沙箱 window 的 dispatchEvent 只按 type 找监听器，插件从事件 detail 里读 { latest, history }
 // 真实链路：dock 写 localStorage 后广播事件，设置页从 localStorage 重读
 const truncatedEntry = { at: Date.now(), sessionId: 'session-smoke', session: '排查录屏', ms: 12, provider: 'p', model: 'm', truncated: true, suggestion: '这是被截断的半句' };
@@ -337,6 +454,8 @@ check('记录条数如实统计（2 条存在，默认只渲染 1 行）',
   /[（(]2\/10[）)]/.test(afterTruncation) && (afterTruncation.match(/p \/ m/g) || []).length === 1,
   afterTruncation.slice(0, 120));
 // 最近预测列表：dock 触发过的预测应当出现在设置页里，且带会话标识
+check('耗时单位按界面语言显示',
+  /毫秒/.test(settingsText) && !/\bms\b/.test(settingsText), settingsText.slice(-80));
 check('设置页列出最近预测（含会话标题）',
   /provider-x/.test(settingsText) && /排查录屏/.test(settingsText) && !/session-/.test(settingsText),
   settingsText.slice(-120));
@@ -446,7 +565,10 @@ check('最近预测不再重复显示在状态行',
 }
 
 // ⑤ 双语：同一个组件，换语言后渲染出的文案必须跟着换
-for (const [lang, expect] of [['zh', '启用联想'], ['en', 'Enable predictions']]) {
+for (const [lang, expect] of [
+  ['zh', '启用联想'],
+  ['en', 'Enable predictions'],
+]) {
   const inst = setup(makeLocale(lang));
   const C = inst.registered['settings.section'].Component;
   const view = mount(inst.react, C, () => ({}));
@@ -460,7 +582,7 @@ for (const [lang, expect] of [['zh', '启用联想'], ['en', 'Enable predictions
   setup(loc);
   const dict = loc.dicts['dsh-prompt-predict'];
   check('词典以命名空间注册进了 locale 服务',
-    Boolean(dict) && Boolean(dict.zh) && Boolean(dict.en) && Object.keys(dict.en).length > 40,
+    Boolean(dict) && dict.zh && dict.en && Object.keys(dict.en).length > 60,
     dict ? `zh=${Object.keys(dict.zh).length} en=${Object.keys(dict.en).length}` : 'not registered');
 }
 
