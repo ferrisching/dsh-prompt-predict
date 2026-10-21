@@ -17,6 +17,11 @@ jobs:
           node-version: "22"
 
       # 用例自带假 ctx 与本地 HTTP server，不需要 DSH 运行时
+      # client.js 是 IIFE 包装的浏览器脚本，测试通过 vm 加载；先单独做一次语法检查，
+      # 这样把「括号没配平」这类错误定位到行号（0.2.7 开发中就踩过一次）。
+      - name: Syntax check client bundle
+        run: node --check client/client.js
+
       - name: Run tests
         run: npm test
 

@@ -32,6 +32,7 @@
 - [🧩 How it works](#-how-it-works)
 - [🛠️ Development](#-development)
 - [🔐 Security and cost](#-security-and-cost)
+- [🩺 Troubleshooting](#-troubleshooting)
 - [⚠️ Known limitations](#-known-limitations)
 - [📄 License](#-license)
 
@@ -43,6 +44,7 @@
 - **Follows the current session model by default** — nothing is hard-coded to a provider, the prediction call reuses whatever model the session itself uses; you can also pin a cheaper model
 - **No repeats, no dead ends** — a repeat of the previous suggestion triggers an automatic "give me a different one"; a reasoning level the real model doesn't support falls back automatically, so you never hit "settings look fine but no suggestion ever appears"
 - **Everything is adjustable** — on/off, provider / model, response timeout, context size and budget, output cap, reasoning effort; changes apply immediately, no DSH restart
+- **Light and dark** — the ghost text, settings page and history follow the system/app colour scheme (`prefers-color-scheme`), with contrast kept at WCAG AA in both
 - **The UI follows your language** — the plugin ships dictionaries for the languages DSH itself supports (Chinese and English), and passes every dictionary it has to the locale service. Switch Settings → Language and the whole plugin UI changes at once, including the ghost hint above the composer **and the validation errors inside Settings** (those are produced by the host, which answers in the language the client sends); no reload needed, and it falls back to Chinese when no locale service is present
 - **Zero runtime dependencies** — plain ESM on both the host and client side
 
@@ -57,7 +59,7 @@ The plugin is published on npm. Options are ordered by convenience.
 **Or the dsh CLI** — pin any published version with pnpm's `@version` syntax:
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.6
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.7
 ```
 
 Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build), then **restart DSH**.
@@ -77,8 +79,8 @@ tarball that is on npm (`shasum` matches the registry), which is handy for offli
 pinning an artifact you can verify:
 
 ```bash
-gh release download v0.2.6 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.6.tgz
+gh release download v0.2.7 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.7.tgz
 ```
 
 Same caveat as the CLI route above: add `"dsh-prompt-predict"` to `dsh.profile.bundles` yourself,
@@ -144,9 +146,10 @@ Suggestions only appear when the composer is empty and the session isn't running
 | Response timeout (advanced) | 1–60 seconds | 12 seconds |
 | Context size (advanced) | Small 3 / Standard 8 / Large 12 messages | Standard 8 |
 | Context budget (advanced) | Character cap sent to the helper call, 1000–20000 | 6000 |
-| Output cap (advanced) | Token cap per suggestion, 16–1024. A reply that hits the cap is retried once with a bigger budget; if it still gets cut, the ghost text is marked **cut off · raise the output cap** | 256 |
+| Output length | How long a suggestion should be, in **characters** (20–400) — no token maths. Pinning a Latin-script language also shows the equivalent in words; CJK stays in characters because word segmentation is undefined there. The host derives a generous token safety cap from it (per language) and writes the character budget into the prompt; a reply that still gets cut is retried with more room and marked **cut off · raise the output length** | 120 |
 | Reasoning effort (advanced) | Options are **generated from the model actually in use** (the session's model when following it); unsupported levels never appear | Off (fastest, cheapest) |
-| Suggestion language (advanced) | `Auto` follows the conversation; pin a language and every suggestion is written in it. 14 mainstream languages are listed up front, the rest fold behind **More languages…**, and languages with regional variants get a second **Region** dropdown: Simplified Chinese (Mainland China / Singapore / Malaysia), Traditional Chinese (Taiwan / Hong Kong), English (US / UK / Australia / Canada), Portuguese (Brazil / Portugal), Spanish (Spain / Latin America (neutral) / Mexico / Argentina / Colombia), French (France / Canada), German (Germany / Austria / Switzerland), Dutch (Netherlands / Belgium). The chosen variant is named explicitly in the prompt (e.g. *Traditional Chinese (Taiwan)*, *British English*) | Auto |
+| Suggestion language | `Auto` follows the conversation; pin a language and every suggestion is written in it. 14 mainstream languages are listed up front, the rest fold behind **More languages…**, and languages with regional variants get a second **Region** dropdown: Simplified Chinese (Mainland China / Singapore / Malaysia), Traditional Chinese (Taiwan / Hong Kong), English (US / UK / Australia / Canada), Portuguese (Brazil / Portugal), Spanish (Spain / Latin America (neutral) / Mexico / Argentina / Colombia), French (France / Canada), German (Germany / Austria / Switzerland), Dutch (Netherlands / Belgium). The chosen variant is named explicitly in the prompt (e.g. *Traditional Chinese (Taiwan)*, *British English*) | Auto |
+| Pause | Stops predictions for ten minutes with a countdown, then resumes automatically; the deadline survives a reload | Off |
 | History size (advanced) | How many recent predictions the settings page keeps (1–50). Records live in the app's own local storage — the Electron renderer's storage in the desktop app, the page's `localStorage` on web — and are never uploaded | 10 |
 
 The bottom of the settings page shows a **recent predictions** list (default 10, adjustable): time, session, model, latency, and whether the reasoning level was auto-downgraded, a reroll happened, the suggestion was truncated by the output cap, or the call failed (with the reason). The list stays folded to the newest run (`▸ Show all` opens the rest), the newest run's suggestion text is expanded by default, and clicking a row's `▸` expands that run's text while collapsing the previous one. Records live in the app's own local storage (the Electron renderer's storage on desktop, the page's `localStorage` on web) and are never uploaded. No more guessing why nothing appeared.
@@ -218,10 +221,56 @@ The tests need no DSH runtime: a fake ctx plus a local HTTP server cover route r
 
 ## 🔐 Security and cost
 
-- **One** small helper call per assistant turn by default (`maxTokens: 64`); an extra attempt only happens when the reasoning level needs downgrading or a suggestion needs rerolling — **three calls is the hard ceiling**, and they share a single timeout budget
+- **One** small helper call per assistant turn by default; an extra attempt only happens when the reply hits the length limit, the reasoning level needs downgrading, or a suggestion needs rerolling — **four calls is the hard ceiling** (primary, reasoning-level fallback, length retry, reroll), and they share a single timeout budget
 - Suggestions are **not written to the session log**; only after you accept with `Tab` and send does the text become a real message
 - Only trimmed user/assistant plain text is sent — tool results, attachments and system prompts never leave the machine
 - Both the settings page and the suggestion endpoint sit behind DSH's own browser-cookie authentication
+
+## 🩺 Troubleshooting
+
+**No suggestion appears at all**
+
+- It runs only after an assistant turn ends (about 350 ms later), never while the reply is still streaming.
+- The composer must be empty. If you already have a draft, the prediction is skipped on purpose — no call is made.
+- A brand-new session with no messages has nothing to predict from.
+- Check Settings → Prompt suggestions: *Enable predictions* must be on, the session must not be paused, and **Recent predictions** must not show an error.
+
+**"Prediction failed: …" shows under the composer** (it appears after two failures in a row)
+
+| Reason text | What to do |
+|---|---|
+| `Request timed out` | Raise *Response timeout* in Advanced |
+| `Provider "…" is unavailable` / `has no model "…"` | Pin a provider and model instead of following the session model |
+| `Prompt prediction is turned off` | Turn the switch back on |
+| anything else | Open Settings → Prompt suggestions → **Recent predictions**; the row carries the host's exact reason |
+
+**Suggestions come in the wrong language**
+
+- `Auto` (the default) detects the language from your recent messages by majority vote over the last five, so a message that is mostly a pasted log can skew it.
+- Pin one instead: Settings → *Suggestion language* (with a *Region* picker for Chinese, English, Portuguese, Spanish, French, German and Dutch).
+- The UI language does **not** affect the suggestion language — those are two separate settings.
+
+**A suggestion ends with "cut off · raise the output length"**
+
+- Raise *Output length*. A capped reply is already retried once with more room before the marker appears.
+- Reasoning models can spend a large part of the budget before writing any text; if this happens often, raise the length or keep *Reasoning effort* off (the default).
+
+**Tab does nothing**
+
+- `Tab` is intercepted only while a suggestion is visible; with no ghost it behaves normally.
+- Click into the composer first — the overlay is positioned over the editor's caret box, and `Tab` acts on the focused editor.
+
+**Ghost text sits on top of what I typed**
+
+- Fixed in `0.2.7`: it hides on paste, IME composition and drag-and-drop, and it no longer appears while the composer has a draft. Upgrade if you still see this.
+
+**"Recent predictions" is empty**
+
+- Records are local to the app's own storage, are wiped by the *Clear* button, and runs recorded before `0.2.5` carry no suggestion text.
+
+**I upgraded but nothing changed**
+
+- Host-side changes (settings fields, prompt construction) apply after **restarting the app**; client-side changes apply after **reloading the window**. The version label in `package.json` is not rewritten by a window reload.
 
 ## ⚠️ Known limitations
 

@@ -25,8 +25,8 @@ window.__ModuleLoader__.load({
         "ghost.acceptHint": "Tab 采纳 · Alt+→ 逐段采纳",
         "ghost.reroll": "换一条建议",
         "ghost.dismiss": "Esc 忽略",
-        "ghost.truncated": "已截断 · 建议调高输出上限（max tokens）",
-        "ghost.truncatedHint": "模型输出撞到「输出上限」被截断：可在 设置 → 提示词联想 → 高级 里调高",
+        "ghost.truncated": "已截断 · 建议调高字数上限",
+        "ghost.truncatedHint": "已截断 · 到 设置 → 提示词联想 → 高级 调高「字数上限」",
         "settings.title": "提示词联想",
         "settings.desc": "助手回复结束后，在输入框里直接给出灰色建议（Tab 采纳、Esc 忽略、开始输入自动消失）。",
         "settings.enable": "启用联想",
@@ -46,8 +46,10 @@ window.__ModuleLoader__.load({
         "settings.contextHint": "越多越准但越慢",
         "settings.maxChars": "上下文预算",
         "settings.maxCharsHint": "字符上限（1000–20000），越小越省 token",
-        "settings.maxTokens": "输出上限",
-        "settings.maxTokensHint": "token（16–1024）。256 大约够 64 个汉字；仍出现半句截断时，把这里调高（最大 1024）",
+        "settings.outputChars": "字数上限",
+        "settings.outputCharsHint": "20–400 字符，不用换算 token",
+        "settings.outputCharsHintFull": "按字符计算建议长度。内部会据此推导一个宽裕的 token 安全网；万一仍被截断，ghost 会标出来并自动放宽重试一次",
+        "settings.outputCharsWords": "（约 {words} 个词）",
         "settings.effort": "思考深度",
         "settings.effortDefault": "跟随模型默认",
         "settings.effortDefaultNoLevels": "跟随模型默认（该模型未公布可调档位）",
@@ -65,11 +67,23 @@ window.__ModuleLoader__.load({
         "settings.actionFailed": "操作失败",
         "settings.resetDone": "已恢复默认",
         "settings.loading": "加载中…",
+        "settings.pause": "暂停预测",
+        "settings.pauseStart": "暂停",
+        "settings.pauseResume": "立即恢复",
+        "settings.pauseLeft": "已暂停，剩余 {time}（到点自动恢复）",
+        "settings.pauseHint": "暂停 {minutes} 分钟，期间不发起调用",
+        "settings.pauseHintFull": "临时不想被打扰时用；暂停期间不会发起任何预测调用，到点自动恢复",
+        "settings.test": "试一下",
+        "settings.testWhilePaused": "暂停期间这个按钮仍然可用：它用于验证设置是否生效",
+        "settings.testing": "请求中…",
+        "settings.testNeedSession": "先打开一个会话再试（设置页拿不到会话上下文）",
+        "settings.testResult": "示例建议：{text}",
+        "settings.testMeta": "{provider} / {model} · {ms} {unit}",
         "run.effortDropped": "已自动降级思考档位",
         "run.dedupRetry": "已换一条",
-        "run.truncated": "被输出上限截断",
+        "run.truncated": "被长度限制截断",
         "run.ms": "毫秒",
-        "settings.truncatedWarn": "最近一次预测被输出上限截断了：把上面的「输出上限」调高到 320 或更大，点「保存」，再触发一次联想试试。",
+        "settings.truncatedWarn": "最近一次预测被长度限制截断了：把上面的「字数上限」调高一档（例如 200 字），点「保存」，再触发一次联想试试。",
         "run.session": "会话 {name}",
         "run.failedShort": "失败 — {reason}",
         "settings.historyTitle": "最近预测（{count}/{limit}）",
@@ -77,10 +91,17 @@ window.__ModuleLoader__.load({
         "settings.historyToggle": "展开 / 收起建议原文",
         "settings.historyExpand": "展开全部",
         "settings.historyCollapse": "收起",
+        "settings.historyClear": "清空",
+        "settings.historyCleared": "已清空。",
+        "settings.historyUndo": "撤销",
+        "settings.historyCopy": "复制",
+        "settings.historyCopied": "已复制",
         "settings.historyNoText": "这次预测没有记录到建议原文（功能上线前的旧记录）",
         "settings.historyEmpty": "还没有记录：触发一次联想后，这里会列出最近几次的会话、模型、耗时和异常标记。",
+        "settings.predictionSection": "预测内容",
         "settings.suggestionLanguage": "建议语言",
-        "settings.suggestionLanguageHint": "默认跟随对话语言；固定一种后，所有建议都用它书写",
+        "settings.suggestionLanguageHint": "跟随对话，也可固定",
+        "settings.suggestionLanguageHintFull": "默认按对话判断语言；固定一种后，所有建议都用它书写（带地区变体的语言还会多出一个地区下拉）",
         "settings.languageAuto": "自动（跟随对话）",
         "settings.languageMore": "更多语言…（另有 {count} 种）",
         "settings.languageRegion": "地区",
@@ -90,6 +111,7 @@ window.__ModuleLoader__.load({
         "storage.web": "浏览器的 localStorage",
         "dock.noSuggestion": "预测未返回有效建议",
         "dock.rerollFailed": "换一条失败",
+        "dock.failureHint": "联想没成功：{reason}（连按两次失败才提示，可在 设置 → 提示词联想 里查看记录）",
       },
       en: {
         "effort.off": "Off", "effort.minimal": "Minimal", "effort.low": "Low",
@@ -97,8 +119,8 @@ window.__ModuleLoader__.load({
         "ghost.acceptHint": "Tab to accept · Alt+→ piece by piece",
         "ghost.reroll": "Suggest another",
         "ghost.dismiss": "Esc to dismiss",
-        "ghost.truncated": "cut off · raise the output cap (max tokens)",
-        "ghost.truncatedHint": "The model hit the output cap: raise \"Output cap\" in Settings → Prompt suggestions → Advanced",
+        "ghost.truncated": "cut off · raise the output length",
+        "ghost.truncatedHint": "cut off · raise Output length in Settings → Prompt suggestions → Advanced",
         "settings.title": "Prompt suggestions",
         "settings.desc": "Shows a gray suggestion in the composer right after each reply (Tab to accept, Esc to dismiss, start typing and it goes away).",
         "settings.enable": "Enable predictions",
@@ -118,8 +140,10 @@ window.__ModuleLoader__.load({
         "settings.contextHint": "More is more accurate but slower",
         "settings.maxChars": "Context budget",
         "settings.maxCharsHint": "Character cap (1000–20000); lower saves tokens",
-        "settings.maxTokens": "Output cap",
-        "settings.maxTokensHint": "tokens (16-1024). 256 is about 64 Chinese characters; raise this if suggestions still get cut off (max 1024)",
+        "settings.outputChars": "Output length",
+        "settings.outputCharsHint": "20-400 characters, no token maths",
+        "settings.outputCharsHintFull": "Length is measured in characters. A generous token cap is derived from it; if a reply still gets cut, the ghost says so and it is retried once with more room",
+        "settings.outputCharsWords": " (~{words} words)",
         "settings.effort": "Reasoning effort",
         "settings.effortDefault": "Follow the model default",
         "settings.effortDefaultNoLevels": "Follow the model default (this model publishes no levels)",
@@ -137,11 +161,23 @@ window.__ModuleLoader__.load({
         "settings.actionFailed": "Action failed",
         "settings.resetDone": "Defaults restored",
         "settings.loading": "Loading…",
+        "settings.pause": "Pause",
+        "settings.pauseStart": "Pause",
+        "settings.pauseResume": "Resume now",
+        "settings.pauseLeft": "Paused - {time} left (resumes automatically)",
+        "settings.pauseHint": "For {minutes} minutes, no calls",
+        "settings.pauseHintFull": "Use it when you do not want predictions for a while; no calls are made while paused and it resumes automatically",
+        "settings.test": "Test now",
+        "settings.testWhilePaused": "Still available while paused - it exists to verify your settings",
+        "settings.testing": "Requesting…",
+        "settings.testNeedSession": "Open a conversation first - the settings page has no session context",
+        "settings.testResult": "Sample suggestion: {text}",
+        "settings.testMeta": "{provider} / {model} · {ms} ms",
         "run.effortDropped": "reasoning level auto-downgraded",
         "run.dedupRetry": "rerolled",
-        "run.truncated": "hit the output cap",
+        "run.truncated": "hit the length limit",
         "run.ms": "ms",
-        "settings.truncatedWarn": "The latest prediction hit the output cap: raise Output cap above to 320 or higher, click Save, then trigger a prediction again.",
+        "settings.truncatedWarn": "The latest prediction hit the length limit: raise Output length above (200 characters, say), click Save, then trigger a prediction again.",
         "run.session": "session {name}",
         "run.failedShort": "failed — {reason}",
         "settings.historyTitle": "Recent predictions ({count}/{limit})",
@@ -149,10 +185,17 @@ window.__ModuleLoader__.load({
         "settings.historyToggle": "Expand / collapse the suggestion text",
         "settings.historyExpand": "Show all",
         "settings.historyCollapse": "Collapse",
+        "settings.historyClear": "Clear",
+        "settings.historyCleared": "Cleared.",
+        "settings.historyUndo": "Undo",
+        "settings.historyCopy": "Copy",
+        "settings.historyCopied": "Copied",
         "settings.historyNoText": "No suggestion text recorded for this run (older record)",
         "settings.historyEmpty": "No records yet: trigger a prediction and this list shows the last few with their session, model, latency and flags.",
+        "settings.predictionSection": "What gets predicted",
         "settings.suggestionLanguage": "Suggestion language",
-        "settings.suggestionLanguageHint": "Follows the conversation by default; pin one language to always get suggestions in it",
+        "settings.suggestionLanguageHint": "Follow the conversation, or pin one",
+        "settings.suggestionLanguageHintFull": "Detected from the conversation by default; pin a language to always get suggestions in it (languages with regional variants also get a Region dropdown)",
         "settings.languageAuto": "Auto (follow the conversation)",
         "settings.languageMore": "More languages… ({count} more)",
         "settings.languageRegion": "Region",
@@ -162,6 +205,7 @@ window.__ModuleLoader__.load({
         "storage.web": "the browser's localStorage",
         "dock.noSuggestion": "Prediction returned no usable suggestion",
         "dock.rerollFailed": "Reroll failed",
+        "dock.failureHint": "Prediction failed: {reason} (shown after two failures in a row; details in Settings → Prompt suggestions)",
       },
     };
 
@@ -245,6 +289,17 @@ window.__ModuleLoader__.load({
       return code;
     }
 
+    // 字数上限的辅助换算：中日韩按「字」算，其它语言额外给出「约 N 个单词」（平均 6 字符/词）
+    function isCjkFamily(code) {
+      if (!code || code === "auto") return false;
+      return /^zh/i.test(code) || /^(ja|ko)\b/i.test(code) || /^zh-/i.test(code);
+    }
+    function wordHint(code, chars, t) {
+      if (isCjkFamily(code)) return "";
+      var words = Math.max(1, Math.round(Number(chars) / 6));
+      return tt(t, "settings.outputCharsWords", { words: words });
+    }
+
     var EFFORT_LABEL_KEYS = {
       off: "effort.off", none: "effort.off", minimal: "effort.minimal",
       low: "effort.low", medium: "effort.medium", high: "effort.high", max: "effort.max",
@@ -301,36 +356,103 @@ window.__ModuleLoader__.load({
     }
 
     // ---------- 设置页样式 ----------
-    var SS = {
-      card: { border: "1px solid var(--dsh-border, #e7e8ee)", borderRadius: 14, padding: "20px 22px", maxWidth: 560, background: "var(--dsh-bg, #fff)" },
-      title: { fontSize: 15, fontWeight: 600, color: "#111827", margin: "0 0 4px" },
-      muted: { color: "#6b7280", fontSize: 13, lineHeight: 1.7 },
-      row: { display: "flex", alignItems: "center", gap: 12, margin: "14px 0" },
-      label: { width: 110, fontSize: 13, color: "#374151", flex: "none" },
-      select: { flex: 1, padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, background: "#fff", maxWidth: 320 },
-      input: { width: 90, padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13 },
-      btnPrimary: { padding: "8px 16px", border: 0, borderRadius: 8, background: "#4f6ef7", color: "#fff", cursor: "pointer", fontSize: 13 },
-      btnGhost: { padding: "8px 16px", border: "1px solid #e5e7eb", borderRadius: 8, background: "#fff", color: "#374151", cursor: "pointer", fontSize: 13 },
-      toggleTrack: function (on) { return { width: 38, height: 22, borderRadius: 22, border: 0, cursor: "pointer", padding: 2, background: on ? "#4f6ef7" : "#d1d5db", transition: "background .15s" }; },
-      toggleThumb: function (on) { return { display: "block", width: 18, height: 18, borderRadius: 18, background: "#fff", transform: on ? "translateX(16px)" : "translateX(0)", transition: "transform .15s" }; },
-      warn: { color: "#b45309", fontSize: 12.5, lineHeight: 1.7, margin: "-8px 0 0 122px" },
-      warnBlock: { color: "#b45309", fontSize: 12.5, lineHeight: 1.7, margin: "-4px 0 12px" },
-      sectionTitle: { fontSize: 13, fontWeight: 600, color: "#374151", margin: "0 0 8px" },
-      histHead: { display: "flex", alignItems: "baseline", gap: 10, margin: "0 0 6px" },
-      histToggle: { background: "none", border: 0, color: "#4f6ef7", fontSize: 12, cursor: "pointer", padding: 0 },
-      histHint: { color: "#9ca3af", fontSize: 12, lineHeight: 1.7, margin: "0 0 6px" },
-      histRowWrap: { borderBottom: "1px solid #f1f1f5", padding: "2px 0" },
-      histRow: { display: "flex", gap: 10, alignItems: "baseline", fontSize: 12.5, lineHeight: 1.9 },
-      histCaret: { color: "#9ca3af", flex: "none", width: 10, fontSize: 11 },
-      histText: { whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#374151", fontSize: 12.5, lineHeight: 1.7, marginBlock: "2px 10px", marginInlineStart: 20, padding: "8px 10px", borderRadius: 8, background: "#f8fafc" },
-      histWhen: { color: "#6b7280", flex: "none", width: 76 },
-      histWho: { color: "#111827", flex: "none", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-      histWhat: { color: "#6b7280", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-      err: { color: "#dc2626", fontSize: 12, marginTop: 8 },
-      ok: { color: "#047857", fontSize: 12, marginTop: 8 },
-      divider: { borderTop: "1px solid #ececf1", margin: "16px 0" },
-      advBtn: { background: "none", border: 0, color: "#4f6ef7", fontSize: 13, cursor: "pointer", padding: 0 },
+    // 调色板：跟随系统/应用的深色模式（prefers-color-scheme）。浅色值保持原样。
+    var PALETTE = {
+      light: {
+        text: "#111827", label: "#374151", muted: "#6b7280", border: "#d1d5db", cardBorder: "#e7e8ee",
+        cardBg: "#fff", inputBg: "#fff", inputText: "#111827", chipBg: "#fff", chipText: "#4b5563",
+        softBg: "#f8fafc", softText: "#374151", divider: "#ececf1", rowBorder: "#f1f1f5",
+        link: "#4f6ef7", primary: "#4f6ef7", primaryText: "#fff", trackOff: "#d1d5db", thumb: "#fff",
+        ok: "#047857", err: "#dc2626", warn: "#b45309", hintBorder: "#cbd5e1",
+        ghostText: "#6b7280", ghostHint: "#6b7280", ghostTruncated: "#b45309", scheme: "light",
+      },
+      dark: {
+        text: "#e5e7eb", label: "#d1d5db", muted: "#9ca3af", border: "#4b5563", cardBorder: "#374151",
+        cardBg: "#111827", inputBg: "#1f2937", inputText: "#e5e7eb", chipBg: "#1f2937", chipText: "#d1d5db",
+        softBg: "#1f2937", softText: "#e5e7eb", divider: "#374151", rowBorder: "#374151",
+        link: "#93c5fd", primary: "#4f6ef7", primaryText: "#fff", trackOff: "#4b5563", thumb: "#fff",
+        ok: "#34d399", err: "#f87171", warn: "#fbbf24", hintBorder: "#4b5563",
+        ghostText: "#9ca3af", ghostHint: "#9ca3af", ghostTruncated: "#fbbf24", scheme: "dark",
+      },
     };
+    function prefersDark() {
+      try {
+        return typeof window !== "undefined" && window.matchMedia
+          && window.matchMedia("(prefers-color-scheme: dark)").matches;
+      } catch { return false; }
+    }
+    var THEME = prefersDark() ? "dark" : "light";
+    function colors() { return PALETTE[THEME]; }
+    // DSH 自身的设计令牌优先（深色/浅色由宿主决定），取不到时回落到本地调色板。
+    function token(name, fallback) { return "var(--dsw-alias-" + name + ", " + fallback + ")"; }
+
+    function buildStyles() {
+      var c = colors();
+      return {
+        card: { border: "1px solid " + token("border-l2", c.cardBorder), borderRadius: 14, padding: "20px 22px", maxWidth: 560, background: token("bg-layer-1", c.cardBg), colorScheme: c.scheme },
+        title: { fontSize: 15, fontWeight: 600, color: token("label-primary", c.text), margin: "0 0 4px" },
+      version: { color: token("label-tertiary", c.muted), fontSize: 11.5, fontWeight: 400, marginInlineStart: 8 },
+        muted: { color: token("label-tertiary", c.muted), fontSize: 13, lineHeight: 1.7 },
+        row: { display: "flex", alignItems: "center", gap: 12, margin: "14px 0" },
+        label: { width: 110, fontSize: 13, color: token("label-secondary", c.label), flex: "none" },
+        select: { flex: 1, padding: "7px 10px", border: "1px solid " + token("border-l1", c.border), borderRadius: 8, fontSize: 13, color: token("label-primary", c.inputText), background: token("bg-base", c.inputBg), maxWidth: 320 },
+        input: { width: 90, padding: "7px 10px", border: "1px solid " + token("border-l1", c.border), borderRadius: 8, fontSize: 13, color: token("label-primary", c.inputText), background: token("bg-base", c.inputBg) },
+        btnPrimary: { padding: "8px 16px", border: 0, borderRadius: 8, background: token("state-business-primary", c.primary), color: c.primaryText, cursor: "pointer", fontSize: 13 },
+        btnGhost: { padding: "8px 16px", border: "1px solid " + token("border-l1", c.border), borderRadius: 8, background: token("bg-layer-2", c.chipBg), color: token("label-primary", c.chipText), cursor: "pointer", fontSize: 13 },
+        toggleTrack: function (on) { return { width: 38, height: 22, borderRadius: 22, border: 0, cursor: "pointer", padding: 2, background: on ? c.primary : c.trackOff, transition: "background .15s" }; },
+        toggleThumb: function (on) { return { display: "block", width: 18, height: 18, borderRadius: 18, background: c.thumb, transform: on ? "translateX(16px)" : "translateX(0)", transition: "transform .15s" }; },
+        warn: { color: c.warn, fontSize: 12.5, lineHeight: 1.7, margin: "-8px 0 0 122px" },
+        warnBlock: { color: c.warn, fontSize: 12.5, lineHeight: 1.7, margin: "-4px 0 12px" },
+        warnInline: { color: c.warn, fontSize: 12, marginInlineStart: 8 },
+        tryBox: { marginTop: 12, padding: "10px 12px", borderRadius: 8, background: token("bg-layer-2", c.softBg), fontSize: 13, lineHeight: 1.7, color: token("label-primary", c.softText) },
+        tryMeta: { display: "block", color: c.muted, fontSize: 11.5, marginTop: 4 },
+        sectionTitle: { fontSize: 13, fontWeight: 600, color: token("label-secondary", c.label), margin: "0 0 8px" },
+        histHead: { display: "flex", alignItems: "baseline", gap: 10, margin: "0 0 6px" },
+        histToggle: { background: "none", border: 0, color: token("state-business-primary", c.link), fontSize: 12, cursor: "pointer", padding: 0 },
+        histHint: { color: token("label-tertiary", c.muted), fontSize: 12, lineHeight: 1.7, margin: "0 0 6px" },
+        linkBtn: { background: "none", border: 0, color: c.link, fontSize: 12, cursor: "pointer", padding: "0 4px", textDecoration: "underline" },
+        hintWithMore: { color: token("label-tertiary", c.muted), fontSize: 13, lineHeight: 1.7, cursor: "help", borderBottom: "1px dotted " + c.hintBorder },
+        // 悬停详情用浮层：不占布局（行高不变），也不接收鼠标事件（不会挡住下面控件的点击）
+        hintAnchor: { position: "relative", display: "inline-block" },
+        hintDetail: {
+          // 提示文字贴在行尾，气泡从**右边缘**向左扩展，避免越过卡片右边被裁掉
+          position: "absolute", top: "calc(100% + 6px)", insetInlineEnd: 0, zIndex: 30,
+          width: "min(300px, 72vw)", padding: "8px 10px", borderRadius: 8, fontSize: 11.5, lineHeight: 1.6,
+          textAlign: "start", whiteSpace: "normal", pointerEvents: "none",
+          color: token("label-primary", c.softText), background: token("bg-layer-2", c.softBg),
+          border: "1px solid " + token("border-l1", c.border), boxShadow: "0 6px 18px rgba(0, 0, 0, 0.14)",
+        },
+        histRowWrap: { borderBottom: "1px solid " + token("border-l1", c.rowBorder), padding: "2px 0" },
+        histRow: { display: "flex", gap: 10, alignItems: "baseline", fontSize: 12.5, lineHeight: 1.9 },
+        histCaret: { color: c.muted, flex: "none", width: 10, fontSize: 11 },
+        histText: { display: "flex", gap: 8, alignItems: "flex-start", marginBlock: "2px 10px", marginInlineStart: 20, padding: "8px 10px", borderRadius: 8, background: token("bg-layer-2", c.softBg) },
+        histTextBody: { flex: 1, whiteSpace: "pre-wrap", wordBreak: "break-word", color: token("label-primary", c.softText), fontSize: 12.5, lineHeight: 1.7 },
+        copyBtn: { flex: "none", padding: "2px 8px", borderRadius: 6, border: "1px solid " + token("border-l1", c.border), background: token("bg-layer-2", c.chipBg), color: token("label-secondary", c.chipText), fontSize: 11.5, cursor: "pointer" },
+        histWhen: { color: c.muted, flex: "none", width: 76 },
+        histWho: { color: c.text, flex: "none", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+        histWhat: { color: c.muted, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+        err: { color: token("state-error-primary", c.err), fontSize: 12, marginTop: 8 },
+        ok: { color: token("state-success-primary", c.ok), fontSize: 12, marginTop: 8 },
+        divider: { borderTop: "1px solid " + token("border-l1", c.divider), margin: "16px 0" },
+        advBtn: { background: "none", border: 0, color: token("state-business-primary", c.link), fontSize: 13, cursor: "pointer", padding: 0 },
+      };
+    }
+    var SS = buildStyles();
+
+    // 主题切换：重建样式表并让已挂载的组件重渲染
+    function watchTheme() {
+      try {
+        if (!window.matchMedia) return;
+        var mq = window.matchMedia("(prefers-color-scheme: dark)");
+        var onChange = function () {
+          THEME = mq.matches ? "dark" : "light";
+          SS = buildStyles();
+          window.dispatchEvent(new CustomEvent("dsh-prompt-predict:theme", { detail: { theme: THEME } }));
+        };
+        if (typeof mq.addEventListener === "function") mq.addEventListener("change", onChange);
+        else if (typeof mq.addListener === "function") mq.addListener(onChange);
+      } catch { /* 老运行时没有 matchMedia，保持浅色 */ }
+    }
     function dim(style, busy) { return busy ? Object.assign({}, style, { opacity: .55, cursor: "not-allowed" }) : style; }
 
     function api(path, body) {
@@ -352,6 +474,25 @@ window.__ModuleLoader__.load({
     function findEditor(sessionId) {
       var scoped = sessionId ? document.querySelector('[data-conversation-session="' + sessionId + '"] [data-composer-input="true"]') : null;
       return scoped || document.querySelector('[data-composer-input="true"]');
+    }
+
+    // 编辑器里「用户已经写了的东西」。rc.2 起 slot 拿不到草稿，只能读 DOM：
+    // 占位符是编辑器的兄弟节点（见上面 hidePlaceholder 的查找方式），所以不会混进来。
+    function editorText(sessionId) {
+      try {
+        var ed = findEditor(sessionId);
+        if (!ed) return "";
+        var raw = typeof ed.textContent === "string" ? ed.textContent : String(ed.innerText || "");
+        return raw.replace(/[\u200b\u00a0\s]/g, "");
+      } catch { return ""; }
+    }
+    // 只把「不是我们采纳插入的那部分」当成用户草稿——逐段采纳后编辑器里本来就有前缀
+    function hasForeignDraft(sessionId, acceptedPrefix) {
+      var text = editorText(sessionId);
+      if (!text) return false;
+      var prefix = String(acceptedPrefix || "").replace(/[\u200b\u00a0\s]/g, "");
+      if (!prefix) return true;
+      return text.indexOf(prefix) !== 0;
     }
 
     // ============ 模块级共享状态（composer dock 写、设置页读） ============
@@ -385,6 +526,30 @@ window.__ModuleLoader__.load({
         return /electron/i.test(ua) ? "storage.electron" : "storage.web";
       } catch { return "storage.web"; }
     }
+    // 「暂停 10 分钟」：临时静默预测。只存本机，到期自动恢复，不需要 Host 参与。
+    var PAUSE_KEY = "dsh-prompt-predict.pausedUntil";
+    function readPausedUntil() {
+      try {
+        var raw = window.localStorage && window.localStorage.getItem(PAUSE_KEY);
+        var until = Number(raw) || 0;
+        return until > Date.now() ? until : 0;
+      } catch { return 0; }
+    }
+    var pausedUntil = readPausedUntil();
+    function isPaused() { return pausedUntil > Date.now(); }
+    function setPause(ms) {
+      pausedUntil = ms > 0 ? Date.now() + ms : 0;
+      try {
+        var store = window.localStorage;
+        if (store) {
+          if (pausedUntil) store.setItem(PAUSE_KEY, String(pausedUntil));
+          else store.removeItem(PAUSE_KEY);
+        }
+      } catch { /* 隐私模式：不存也不影响本次会话 */ }
+      window.dispatchEvent(new CustomEvent("dsh-prompt-predict:pause", { detail: { until: pausedUntil } }));
+      return pausedUntil;
+    }
+
     // 最近预测记录：刷新页面、重启 App 都还在（存在应用自身的 localStorage，本机、不上传）
     var runHistory = readStoredHistory();
     var historyLimit = 10;
@@ -487,6 +652,7 @@ window.__ModuleLoader__.load({
     function GhostOverlay(props) {
       var suggestion = props.suggestion;
       var truncated = Boolean(props.truncated);
+      var _th = useState(false), truncatedHover = _th[0], setTruncatedHover = _th[1];
       var sessionId = props.sessionId;
       var onAccept = props.onAccept;
       var onReroll = props.onReroll;
@@ -545,11 +711,11 @@ window.__ModuleLoader__.load({
           pointerEvents: "none",
           fontFamily: pos.fontFamily, fontSize: pos.fontSize, lineHeight: pos.lineHeight, fontWeight: pos.fontWeight,
           // 长建议在原位折行显示，完整可见；只有采纳才写进 Lexical。
-          color: "#9aa3b2", whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word",
+          color: token("label-tertiary", colors().ghostText), whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word",
         },
       },
         h("span", {
-          style: { color: "#9aa3b2" },
+          style: { color: token("label-tertiary", colors().ghostText) },
         }, suggestion),
         h("span", {
           style: { display: "inline-flex", alignItems: "center", gap: 6, marginInlineStart: 8, whiteSpace: "nowrap", verticalAlign: "middle" },
@@ -558,25 +724,117 @@ window.__ModuleLoader__.load({
             type: "button", onClick: onAccept,
             title: tt(t, "ghost.acceptHint"),
             style: {
-              pointerEvents: "auto", padding: "0 7px", height: 19, borderRadius: 5,
-              border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
-              color: "#9aa3b2", fontSize: 10, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer",
+              pointerEvents: "auto", padding: "0 9px", height: 24, borderRadius: 6,
+              border: "1px solid " + token("border-l1", colors().border), background: token("bg-layer-2", colors().softBg),
+              color: token("label-secondary", colors().chipText), fontSize: 11, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer",
             },
           }, "Tab"),
           h("button", {
             type: "button", onClick: onReroll, title: tt(t, "ghost.reroll"),
             style: {
-              pointerEvents: "auto", width: 19, height: 19, padding: 0, borderRadius: 5,
-              border: "1px solid var(--dsw-alias-border-l1, #d1d5db)", background: "var(--dsw-alias-bg-secondary, #f8fafc)",
-              color: "#9aa3b2", fontSize: 11, lineHeight: 1, cursor: "pointer",
+              pointerEvents: "auto", width: 24, height: 24, padding: 0, borderRadius: 6,
+              border: "1px solid var(--dsw-alias-border-l1, " + colors().border + ")", background: "var(--dsw-alias-bg-secondary, " + colors().softBg + ")",
+              color: token("label-secondary", colors().chipText), fontSize: 12, lineHeight: 1, cursor: "pointer",
             },
           }, "↻"),
-          h("span", { style: { color: "#b0b7c3", fontSize: 10, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")),
+          h("span", { style: { color: token("label-tertiary", colors().ghostHint), fontSize: 11, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")),
           truncated
-            ? h("span", { style: { color: "#c08457", fontSize: 10, whiteSpace: "nowrap" }, title: tt(t, "ghost.truncatedHint") }, tt(t, "ghost.truncated"))
+            ? h("span", {
+              // 覆盖层整体 pointer-events:none：这里单独放开，悬停时把设置路径直接展开在文字里
+              //（原生 title 在这个渲染环境不弹，只变光标）
+              "data-prompt-predict-truncated": "true",
+              style: { color: colors().ghostTruncated, fontSize: 11, whiteSpace: "nowrap", pointerEvents: "auto", cursor: "help" },
+              onMouseEnter: function () { setTruncatedHover(true); },
+              onMouseLeave: function () { setTruncatedHover(false); },
+            }, truncatedHover ? tt(t, "ghost.truncatedHint") : tt(t, "ghost.truncated"))
             : null
         )
       );
+    }
+
+    // 原生 title 在这个渲染环境里不弹（只变光标），改成自绘 tooltip：鼠标移入/键盘聚焦都显示。
+    function InfoHint(props) {
+      var _o = useState(false), open = _o[0], setOpen = _o[1];
+      var show = function () { setOpen(true); };
+      var hide = function () { setOpen(false); };
+      return h("span", {
+        style: SS.hintAnchor,
+        tabIndex: 0,
+        "data-prompt-predict-hint-more": "true",
+        onMouseEnter: show, onMouseLeave: hide, onFocus: show, onBlur: hide,
+      },
+        h("span", { style: SS.hintWithMore }, props.text),
+        // 浮层气泡：绝对定位，不改变行高
+        open ? h("span", { role: "tooltip", style: SS.hintDetail }, props.full) : null);
+    }
+
+    // 暂停剩余时间：m:ss
+    function formatLeft(ms) {
+      var total = Math.max(0, Math.ceil(ms / 1000));
+      var m = Math.floor(total / 60);
+      var sec = total % 60;
+      return m + ":" + (sec < 10 ? "0" + sec : String(sec));
+    }
+
+    // 连续失败计数放在模块级：同屏可能同时挂着多个 composer dock（子会话等），
+    // 各算各的会导致「两个会话各失败一次」永远到不了提示阈值。
+    // 但提示只在**最近失败的那个会话**里显示，避免一个会话超时、满屏 composer 都弹提示。
+    var failState = { streak: 0, reason: "", sessionId: null };
+    function noteFailure(sessionId, reason) {
+      failState = { streak: failState.streak + 1, reason: reason, sessionId: sessionId || null };
+      try { window.dispatchEvent(new CustomEvent("dsh-prompt-predict:fail", { detail: failState })); } catch { /* 忽略 */ }
+    }
+    function noteSuccess() {
+      if (!failState.streak) return;
+      failState = { streak: 0, reason: "", sessionId: null };
+      try { window.dispatchEvent(new CustomEvent("dsh-prompt-predict:fail", { detail: failState })); } catch { /* 忽略 */ }
+    }
+
+    // 连续失败时在输入框里给一行提示：以前失败是彻底静默的，用户只会觉得「插件没反应」。
+    function ComposerHint(props) {
+      var sessionId = props.sessionId;
+      var text = props.text;
+      var t = props.t;
+      var _p = useState(null), pos = _p[0], setPos = _p[1];
+
+      var measure = useCallback(function () {
+        var ed = findEditor(sessionId);
+        if (!ed) { setPos(null); return; }
+        var r = ed.getBoundingClientRect();
+        var cs = getComputedStyle(ed);
+        var padLeft = parseFloat(cs.paddingLeft || "0") || 0;
+        var padRight = parseFloat(cs.paddingRight || "0") || 0;
+        setPos({
+          left: r.left + padLeft,
+          top: r.top + parseFloat(cs.paddingTop || "0"),
+          width: r.width > 0 ? Math.max(80, r.width - padLeft - padRight) : 0,
+          fontFamily: cs.fontFamily, fontSize: cs.fontSize,
+        });
+      }, [sessionId]);
+
+      useEffect(function () {
+        measure();
+        window.addEventListener("resize", measure, true);
+        window.addEventListener("scroll", measure, true);
+        return function () {
+          window.removeEventListener("resize", measure, true);
+          window.removeEventListener("scroll", measure, true);
+        };
+      }, [measure, text]);
+
+      if (!pos) return null;
+      return h("div", {
+        role: "status",
+        "aria-live": "polite",
+        "data-prompt-predict-hint": "true",
+        dir: "auto",
+        style: {
+          position: "fixed", left: pos.left, top: pos.top, zIndex: 60,
+          width: pos.width || undefined, pointerEvents: "none",
+          fontFamily: pos.fontFamily, fontSize: pos.fontSize,
+          color: colors().warn, whiteSpace: "pre-wrap", overflowWrap: "anywhere",
+        },
+      }, text);
     }
 
     // ================= 建议（composer dock 仅提供生命周期；显示覆盖到输入框内） =================
@@ -597,6 +855,9 @@ window.__ModuleLoader__.load({
       var draft = useInput(function (value) { return String(value && value.draft || ""); });
       var _s = useState(""), suggestion = _s[0], setSuggestion = _s[1];
       var _tr = useState(false), truncated = _tr[0], setTruncated = _tr[1];
+      var _dt = useState(0), draftTick = _dt[0], setDraftTick = _dt[1];
+      var _theme = useState(0), themeTick = _theme[0], setThemeTick = _theme[1];
+      var _fail = useState(failState), failure = _fail[0], setFailure = _fail[1];
       var _ac = useState(""), accepted = _ac[0], setAccepted = _ac[1];   // 逐段采纳已写进输入框的前缀
       var _en = useState(true), enabled = _en[0], setEnabled = _en[1];
       var armed = useRef(true);
@@ -660,8 +921,8 @@ window.__ModuleLoader__.load({
           if (abortRef.current) abortRef.current.abort();
           return;
         }
-        if (!sessionId || blank || removed || !armed.current) return;
-        if (draft.trim() !== "") return;
+        if (!sessionId || blank || removed || !armed.current || isPaused()) return;
+        if (draft.trim() !== "" || hasForeignDraft(sessionId, accepted)) return;
         armed.current = false;
         var controller = new AbortController();
         abortRef.current = controller;
@@ -673,20 +934,68 @@ window.__ModuleLoader__.load({
                 typedSince.current = false;
                 setSuggestion(result.suggestion.trim());
                 setTruncated(Boolean(result.truncated));
+                noteSuccess();
                 recordRun(sessionId, result, null, sessionTitle);
               } else {
                 // 失败照样记下来：设置页会显示原因（以前是彻底静默，排查全靠猜）
-                recordRun(sessionId, null, (result && result.reason) || tt(t, "dock.noSuggestion"), sessionTitle);
+                var reason = (result && result.reason) || tt(t, "dock.noSuggestion");
+                noteFailure(sessionId, reason);
+                recordRun(sessionId, null, reason, sessionTitle);
               }
             })
-            .catch(function (error) { recordRun(sessionId, null, String(error), sessionTitle); });
+            .catch(function (error) {
+              noteFailure(sessionId, String(error));
+              recordRun(sessionId, null, String(error), sessionTitle);
+            });
         }, 350);
         return function () {
           clearTimeout(timer);
           controller.abort();
           if (abortRef.current === controller) abortRef.current = null;
         };
-      }, [sessionId, running, blank, removed, draft, enabled]);
+      }, [sessionId, running, blank, removed, draft, enabled, draftTick]);
+
+      // 暂停/恢复：暂停时把已显示的建议收掉；恢复时重新武装并触发一次预测
+      useEffect(function () {
+        var onPause = function (event) {
+          var until = (event && event.detail && event.detail.until) || 0;
+          if (until > Date.now()) {
+            setSuggestion("");
+            setAccepted("");
+            setTruncated(false);
+          } else {
+            armed.current = true;
+            setDraftTick(function (n) { return n + 1; });
+          }
+        };
+        var onFail = function (event) { setFailure(event && event.detail ? event.detail : failState); };
+        var onTheme = function () { setThemeTick(function (n) { return n + 1; }); };
+        window.addEventListener("dsh-prompt-predict:pause", onPause);
+        window.addEventListener("dsh-prompt-predict:fail", onFail);
+        window.addEventListener("dsh-prompt-predict:theme", onTheme);
+        return function () {
+          window.removeEventListener("dsh-prompt-predict:pause", onPause);
+          window.removeEventListener("dsh-prompt-predict:fail", onFail);
+          window.removeEventListener("dsh-prompt-predict:theme", onTheme);
+        };
+      }, []);
+
+      // 因为「有草稿就不预测」会直接 return，草稿被清空后需要重新触发一次。
+      // rc.2 没有 draft 可订阅，只能监听编辑器的输入事件，发现变空就 bump 一下。
+      useEffect(function () {
+        var ed = findEditor(sessionId);
+        if (!ed || typeof ed.addEventListener !== "function") return;
+        var onInput = function () {
+          if (!armed.current) return;                       // 已经预测过 / 正在预测
+          if (hasForeignDraft(sessionId, accepted)) return;  // 还有草稿
+          setDraftTick(function (n) { return n + 1; });
+        };
+        var types = ["input", "keyup", "compositionend", "paste", "drop"];
+        types.forEach(function (type) { ed.addEventListener(type, onInput, true); });
+        return function () {
+          types.forEach(function (type) { ed.removeEventListener(type, onInput, true); });
+        };
+      }, [sessionId, accepted]);
 
       var accept = useCallback(function () {
         if (!visibleSuggestion || !inputActions || dismissedByDraft.current) return false;
@@ -729,7 +1038,10 @@ window.__ModuleLoader__.load({
               recordRun(sessionId, null, (result && result.reason) || tt(t, "dock.rerollFailed"), sessionTitle);
             }
           })
-          .catch(function (error) { recordRun(sessionId, null, String(error), sessionTitle); });
+          .catch(function (error) {
+            noteFailure(sessionId, String(error));
+            recordRun(sessionId, null, String(error), sessionTitle);
+          });
       }, [sessionId, suggestion]);
 
       useEffect(function () {
@@ -754,12 +1066,34 @@ window.__ModuleLoader__.load({
           event.preventDefault();
           event.stopPropagation();
         };
+        // 除了可打印键，粘贴 / 输入法合成 / 任何文本输入 / 拖拽落字 也算「用户开始输入」。
+        // 只监听 keydown 的话，中文输入法（key=Process）和 Cmd+V 都躲得过去，灰字会压在正文上。
+        var hideOnInput = function () {
+          if (typedSince.current) return;
+          typedSince.current = true;
+          setTypedTick(function (n) { return n + 1; });
+        };
+        var editor = findEditor(sessionId);
+        var inputTarget = editor || window;
+        var inputEvents = ["paste", "compositionstart", "beforeinput", "drop"];
+        inputEvents.forEach(function (type) { inputTarget.addEventListener(type, hideOnInput, true); });
         window.addEventListener("keydown", onKey, true);
-        return function () { window.removeEventListener("keydown", onKey, true); };
-      }, [visibleSuggestion, accept, acceptChunk]);
+        return function () {
+          inputEvents.forEach(function (type) { inputTarget.removeEventListener(type, hideOnInput, true); });
+          window.removeEventListener("keydown", onKey, true);
+        };
+      }, [visibleSuggestion, accept, acceptChunk, sessionId]);
 
       // 建议直接以灰色 ghost text 覆盖在 Lexical 输入框首字符处。
-      if (!enabled || dismissedByDraft.current || !visibleSuggestion) return null;
+      if (!enabled) return null;
+      if (!visibleSuggestion) {
+        // 连续两次失败才提示，避免偶发超时刷屏；用户开始输入就不再打扰
+        if (failure && failure.streak >= 2 && failure.sessionId === sessionId && !typedSince.current && !hasForeignDraft(sessionId, accepted)) {
+          return h(ComposerHint, { sessionId: sessionId, text: tt(t, "dock.failureHint", { reason: String(failure.reason || "").slice(0, 80) }), t: t });
+        }
+        return null;
+      }
+      if (dismissedByDraft.current || hasForeignDraft(sessionId, accepted)) return null;
       // 回到覆盖层：它在真实环境里是可见的（dock 内联行实测看不见）。
       // 「打字即隐藏」由上面的 typedSince 信号负责，不再依赖草稿状态。
       return h(GhostOverlay, { suggestion: visibleSuggestion, sessionId: sessionId, truncated: truncated, onAccept: accept, onReroll: reroll, t: t });
@@ -775,7 +1109,7 @@ window.__ModuleLoader__.load({
       var _to = useState(12), timeoutSec = _to[0], setTimeoutSec = _to[1];
       var _ctx = useState(8), ctxSize = _ctx[0], setCtxSize = _ctx[1];
       var _mc = useState(6000), maxChars = _mc[0], setMaxChars = _mc[1];
-      var _mt = useState(256), maxTokens = _mt[0], setMaxTokens = _mt[1];
+      var _mt = useState(120), outputChars = _mt[0], setOutputChars = _mt[1];
       var _hs = useState(10), historySize = _hs[0], setHistorySize = _hs[1];
       var _sl = useState("auto"), suggestionLanguage = _sl[0], setSuggestionLanguage = _sl[1];
       var _lo = useState(DEFAULT_LANGUAGE_CODES), languageCodes = _lo[0], setLanguageCodes = _lo[1];
@@ -790,6 +1124,71 @@ window.__ModuleLoader__.load({
       var _msg = useState(null), msg = _msg[0], setMsg = _msg[1];
       var _adv = useState(false), adv = _adv[0], setAdv = _adv[1];
       var _dirty = useState(false), dirty = _dirty[0], setDirty = _dirty[1];
+      var _try = useState(null), tryResult = _try[0], setTryResult = _try[1];
+      var _copied = useState(""), copiedKey = _copied[0], setCopiedKey = _copied[1];
+      var _pause = useState(pausedUntil), pauseState = _pause[0], setPauseState = _pause[1];
+      var _theme2 = useState(0), themeTick2 = _theme2[0], setThemeTick2 = _theme2[1];
+      var _ver = useState(null), pluginVersion = _ver[0], setPluginVersion = _ver[1];
+      var _undo = useState(null), undoSnapshot = _undo[0], setUndoSnapshot = _undo[1];   // 清空后可撤销的快照
+
+      function togglePause() {
+        var until = isPaused() ? setPause(0) : setPause(10 * 60 * 1000);
+        setPauseState(until);
+      }
+      // 深色模式切换时重渲染（SS 是模块级样式表，切换后需要重新取）
+      useEffect(function () {
+        var onTheme = function () { setThemeTick2(function (n) { return n + 1; }); };
+        window.addEventListener("dsh-prompt-predict:theme", onTheme);
+        return function () { window.removeEventListener("dsh-prompt-predict:theme", onTheme); };
+      }, []);
+
+      // 暂停中每秒刷新剩余时间；到点自动恢复
+      useEffect(function () {
+        if (!pauseState) return;
+        var timer = setInterval(function () {
+          if (isPaused()) { setPauseState(pausedUntil); return; }
+          setPauseState(0);
+        }, 1000);
+        return function () { clearInterval(timer); };
+      }, [pauseState]);
+
+      function clearHistory() {
+        var snapshot = history.slice();
+        runHistory = [];
+        persistHistory();
+        setHistory([]);
+        setCopiedKey("");
+        setUndoSnapshot(snapshot);
+        window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", { detail: { latest: null, history: [] } }));
+        // 5 秒后撤销入口自动消失（记录已经真的删了）
+        setTimeout(function () { setUndoSnapshot(null); }, 5000);
+      }
+      function undoClear() {
+        if (!undoSnapshot || !undoSnapshot.length) return;
+        runHistory = undoSnapshot.slice();
+        persistHistory();
+        setHistory(undoSnapshot.slice());
+        setUndoSnapshot(null);
+        window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", { detail: { latest: runHistory[0] || null, history: runHistory.slice() } }));
+      }
+      function copySuggestion(key, text) {
+        var done = function () {
+          setCopiedKey(key);
+          setTimeout(function () { setCopiedKey(function (cur) { return cur === key ? "" : cur; }); }, 1500);
+        };
+        try {
+          if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () { done(); });
+            return;
+          }
+        } catch { /* 落到下面的兜底 */ }
+        try {
+          var ta = document.createElement("textarea");
+          ta.value = text; document.body.appendChild(ta); ta.select();
+          document.execCommand("copy"); document.body.removeChild(ta);
+        } catch { /* 复制失败就算了，不打断用户 */ }
+        done();
+      }
 
       function loadAll() {
         // 带上当前会话 id：这样「跟随会话模型」时档位下拉拿到的是会话真实模型，
@@ -797,13 +1196,14 @@ window.__ModuleLoader__.load({
         api("status" + (liveSessionId ? "?sessionId=" + encodeURIComponent(liveSessionId) : "")).then(function (j) {
           if (!j || !j.ok) return;
           setSt(j);
+          if (j.version) setPluginVersion(String(j.version));
           var eff = j.effective || {};
           setProvider(eff.provider || "");
           setModel(eff.model || "");
           setTimeoutSec(Math.round((eff.timeoutMs || 12000) / 1000));
           setCtxSize(eff.maxMessages || 8);
           setMaxChars(eff.maxChars || 6000);
-          setMaxTokens(eff.maxTokens || 256);
+          setOutputChars(eff.outputChars || 120);
           setHistorySize(eff.historySize || 10);
           setSuggestionLanguage(normalizeSavedLanguage(eff.suggestionLanguage || "auto"));
           if (Array.isArray(j.languages) && j.languages.length) setLanguageCodes(j.languages);
@@ -857,7 +1257,7 @@ window.__ModuleLoader__.load({
           timeoutMs: timeoutSec * 1000,
           maxMessages: ctxSize,
           maxChars: maxChars,
-          maxTokens: maxTokens,
+          outputChars: outputChars,
           historySize: historySize,
           suggestionLanguage: suggestionLanguage,
           reasoningEffort: effort,
@@ -875,6 +1275,32 @@ window.__ModuleLoader__.load({
         }).catch(function (e) { setMsg({ ok: false, text: String(e) }); })
           .finally(function () { setBusy(false); });
       }
+      // 「试一下」：直接打 /suggest，走的是和 composer 完全相同的链路（模型路由、语言、字数、
+      // 截断重试都包含），所以能用来确认设置到底生效没有。
+      function runTry() {
+        if (!liveSessionId) { setMsg({ ok: false, text: tt(t, "settings.testNeedSession") }); return; }
+        setBusy(true); setMsg(null); setTryResult(null);
+        api("suggest", { sessionId: liveSessionId })
+          .then(function (j) {
+            if (j && j.ok && typeof j.suggestion === "string" && j.suggestion.trim()) {
+              setTryResult({
+                text: j.suggestion.trim(),
+                truncated: Boolean(j.truncated),
+                meta: tt(t, "settings.testMeta", {
+                  provider: j.provider || "?", model: j.model || "?",
+                  ms: typeof j.ms === "number" ? j.ms : "?",
+                  unit: tt(t, "run.ms"),
+                }),
+              });
+              recordRun(liveSessionId, j, null, null);
+            } else {
+              setMsg({ ok: false, text: (j && j.reason) || tt(t, "dock.noSuggestion") });
+            }
+          })
+          .catch(function (e) { setMsg({ ok: false, text: String(e) }); })
+          .finally(function () { setBusy(false); });
+      }
+
       function resetDefaults() {
         setBusy(true); setMsg(null);
         api("settings", { reset: true }).then(function (j) {
@@ -887,7 +1313,11 @@ window.__ModuleLoader__.load({
       var enabled = eff.enabled !== false;
 
       return h("div", { style: SS.card, dir: "auto" },
-        h("p", { style: SS.title }, tt(t, "settings.title")),
+        h("p", { style: SS.title },
+          tt(t, "settings.title"),
+          pluginVersion
+            ? h("span", { style: SS.version, "data-prompt-predict-version": "true" }, "v" + pluginVersion)
+            : null),
         h("p", { style: SS.muted }, tt(t, "settings.desc")),
 
         h("div", { style: SS.row },
@@ -927,6 +1357,76 @@ window.__ModuleLoader__.load({
                 }))),
         h("p", { style: SS.muted }, tt(t, "settings.modelHint")),
 
+        h("p", { style: SS.muted }, tt(t, "settings.predictionSection")),
+        h("div", { style: SS.row },
+        h("span", { style: SS.label }, tt(t, "settings.suggestionLanguage")),
+        h("select", {
+            style: SS.select, value: languageFamily(suggestionLanguage), disabled: !enabled || busy,
+            "data-prompt-predict-language": "true",
+            onChange: function (e) {
+              var next = e.target.value;
+              if (next === MORE_LANGUAGES) { setLanguagesExpanded(true); return; }   // 只展开，不改选择
+              var variants = familyVariants(next);
+              var keep = variants.some(function (item) { return item[0] === suggestionLanguage; });
+              setSuggestionLanguage(variants.length > 1 ? (keep ? suggestionLanguage : variants[0][0]) : next);
+              setDirty(true);
+            },
+          },
+            (function () {
+              var shownBases = MAINSTREAM_LANGUAGE_CODES.slice();
+              var extras = languageCodes.filter(function (code) {
+                return !MANAGED_CODES[code] && shownBases.indexOf(code) === -1;
+              });
+              var options = [h("option", { key: "auto", value: "auto" }, tt(t, "settings.languageAuto"))];
+              shownBases.forEach(function (code) {
+                options.push(h("option", { key: code, value: code }, languageLabel(code)));
+              });
+              if (languagesExpanded) {
+                extras.forEach(function (code) {
+                  options.push(h("option", { key: code, value: code }, languageLabel(code)));
+                });
+              } else if (extras.length) {
+                options.push(h("option", { key: MORE_LANGUAGES, value: MORE_LANGUAGES }, tt(t, "settings.languageMore", { count: extras.length })));
+              }
+              return options;
+            })()),
+          (function () {
+            var variants = familyVariants(languageFamily(suggestionLanguage));
+            if (variants.length < 2) return null;
+            var current = variants.some(function (item) { return item[0] === suggestionLanguage; })
+              ? suggestionLanguage : variants[0][0];
+            return h("select", {
+              style: Object.assign({}, SS.select, { maxWidth: 140 }),
+              value: current, disabled: !enabled || busy,
+              "data-prompt-predict-language-region": "true",
+              title: tt(t, "settings.languageRegion"),
+              onChange: function (e) { setSuggestionLanguage(e.target.value); setDirty(true); },
+            }, variants.map(function (item) {
+              return h("option", { key: item[0], value: item[0] }, regionLabel(item[0], languageFamily(suggestionLanguage), t));
+            }));
+          })(),
+          h(InfoHint, { text: tt(t, "settings.suggestionLanguageHint"), full: tt(t, "settings.suggestionLanguageHintFull") })),
+        h("div", { style: SS.row },
+          h("span", { style: SS.label }, tt(t, "settings.outputChars")),
+          h("input", { style: SS.input, type: "number", min: 20, max: 400, step: 10, value: outputChars, disabled: !enabled || busy, "data-prompt-predict-chars": "true", onChange: function (e) { setOutputChars(Number(e.target.value)); setDirty(true); } }),
+          h(InfoHint, { text: tt(t, "settings.outputCharsHint") + wordHint(suggestionLanguage, outputChars, t), full: tt(t, "settings.outputCharsHintFull") })),
+
+        h("div", { style: SS.row },
+          h("span", { style: SS.label }, tt(t, "settings.pause")),
+          h("button", {
+            type: "button", style: dim(Object.assign({}, SS.btnGhost, { whiteSpace: "nowrap" }), busy), disabled: busy,
+            "data-prompt-predict-pause": "true",
+            onClick: togglePause,
+          }, pauseState
+            ? tt(t, "settings.pauseResume")
+            : tt(t, "settings.pauseStart", { minutes: 10 })),
+          h(InfoHint, {
+            text: pauseState
+              ? tt(t, "settings.pauseLeft", { time: formatLeft(pauseState - Date.now()) })
+              : tt(t, "settings.pauseHint", { minutes: 10 }),
+            full: tt(t, "settings.pauseHintFull"),
+          })),
+
         h("p", null, h("button", { style: SS.advBtn, onClick: function () { setAdv(!adv); } }, (adv ? "▾" : "▸") + tt(t, "settings.advanced"))),
         adv ? h("div", null,
           h("div", { style: SS.row },
@@ -945,10 +1445,6 @@ window.__ModuleLoader__.load({
             h("input", { style: SS.input, type: "number", min: 1000, max: 20000, step: 500, value: maxChars, disabled: !enabled || busy, onChange: function (e) { setMaxChars(Number(e.target.value)); setDirty(true); } }),
             h("span", { style: SS.muted }, tt(t, "settings.maxCharsHint"))),
           h("div", { style: SS.row },
-            h("span", { style: SS.label }, tt(t, "settings.maxTokens")),
-            h("input", { style: SS.input, type: "number", min: 16, max: 1024, step: 8, value: maxTokens, disabled: !enabled || busy, onChange: function (e) { setMaxTokens(Number(e.target.value)); setDirty(true); } }),
-            h("span", { style: SS.muted }, tt(t, "settings.maxTokensHint"))),
-          h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.historySize")),
             h("input", { style: SS.input, type: "number", min: 1, max: 50, step: 1, value: historySize, disabled: !enabled || busy, onChange: function (e) { setHistorySize(Number(e.target.value)); setDirty(true); } }),
             h("span", { style: SS.muted }, tt(t, "settings.historySizeHint", { storage: tt(t, storagePlatformKey()) }))),
@@ -963,55 +1459,7 @@ window.__ModuleLoader__.load({
                   return h("option", { key: id, value: id }, tt(t, EFFORT_LABEL_KEYS[id] || id) + (id === "off" ? tt(t, "settings.effortFastest") : ""));
                 });
               })()),
-            h("span", { style: SS.muted }, effortSourceHint(st, t))),
-          h("div", { style: SS.row },
-            h("span", { style: SS.label }, tt(t, "settings.suggestionLanguage")),
-            h("select", {
-              style: SS.select, value: languageFamily(suggestionLanguage), disabled: !enabled || busy,
-              "data-prompt-predict-language": "true",
-              onChange: function (e) {
-                var next = e.target.value;
-                if (next === MORE_LANGUAGES) { setLanguagesExpanded(true); return; }   // 只展开，不改选择
-                var variants = familyVariants(next);
-                var keep = variants.some(function (item) { return item[0] === suggestionLanguage; });
-                setSuggestionLanguage(variants.length > 1 ? (keep ? suggestionLanguage : variants[0][0]) : next);
-                setDirty(true);
-              },
-            },
-              (function () {
-                var shownBases = MAINSTREAM_LANGUAGE_CODES.slice();
-                var extras = languageCodes.filter(function (code) {
-                  return !MANAGED_CODES[code] && shownBases.indexOf(code) === -1;
-                });
-                var options = [h("option", { key: "auto", value: "auto" }, tt(t, "settings.languageAuto"))];
-                shownBases.forEach(function (code) {
-                  options.push(h("option", { key: code, value: code }, languageLabel(code)));
-                });
-                if (languagesExpanded) {
-                  extras.forEach(function (code) {
-                    options.push(h("option", { key: code, value: code }, languageLabel(code)));
-                  });
-                } else if (extras.length) {
-                  options.push(h("option", { key: MORE_LANGUAGES, value: MORE_LANGUAGES }, tt(t, "settings.languageMore", { count: extras.length })));
-                }
-                return options;
-              })()),
-            (function () {
-              var variants = familyVariants(languageFamily(suggestionLanguage));
-              if (variants.length < 2) return null;
-              var current = variants.some(function (item) { return item[0] === suggestionLanguage; })
-                ? suggestionLanguage : variants[0][0];
-              return h("select", {
-                style: Object.assign({}, SS.select, { maxWidth: 140 }),
-                value: current, disabled: !enabled || busy,
-                "data-prompt-predict-language-region": "true",
-                title: tt(t, "settings.languageRegion"),
-                onChange: function (e) { setSuggestionLanguage(e.target.value); setDirty(true); },
-              }, variants.map(function (item) {
-                return h("option", { key: item[0], value: item[0] }, regionLabel(item[0], languageFamily(suggestionLanguage), t));
-              }));
-            })(),
-            h("span", { style: SS.muted }, tt(t, "settings.suggestionLanguageHint"))) ) : null,
+            h("span", { style: SS.muted }, effortSourceHint(st, t))) ) : null,
 
         h("div", { style: SS.divider }),
         h("div", { style: SS.histHead },
@@ -1023,10 +1471,24 @@ window.__ModuleLoader__.load({
               "data-prompt-predict-history-toggle": "true",
               onClick: function () { setListOpen(!listOpen); },
             }, (listOpen ? "▾ " : "▸ ") + tt(t, listOpen ? "settings.historyCollapse" : "settings.historyExpand"))
+            : null,
+          history.length
+            ? h("button", {
+              type: "button", style: SS.histToggle, "data-prompt-predict-history-clear": "true",
+              onClick: clearHistory,
+            }, tt(t, "settings.historyClear"))
             : null),
         // 真被截断时不用展开「高级」就能看到：直接给可执行的建议
         run && run.truncated
           ? h("p", { style: SS.warnBlock }, tt(t, "settings.truncatedWarn"))
+          : null,
+        undoSnapshot && undoSnapshot.length
+          ? h("p", { style: SS.histHint },
+            h("span", null, tt(t, "settings.historyCleared")),
+            h("button", {
+              type: "button", style: SS.linkBtn, "data-prompt-predict-history-undo": "true",
+              onClick: undoClear,
+            }, tt(t, "settings.historyUndo")))
           : null,
         history.length === 0
           ? h("p", { style: SS.muted }, tt(t, "settings.historyEmpty"))
@@ -1051,20 +1513,38 @@ window.__ModuleLoader__.load({
                     h("span", { style: SS.histWho, title: String(runSessionName(item) || "") }, runSessionName(item) || "-"),
                     h("span", { style: SS.histWhat, title: historyDetail(item, t) }, historyDetail(item, t))),
                   isOpen
-                    ? h("div", { style: SS.histText }, item.suggestion || tt(t, "settings.historyNoText"))
+                    ? h("div", { style: SS.histText },
+                      h("span", { style: SS.histTextBody }, item.suggestion || tt(t, "settings.historyNoText")),
+                      item.suggestion
+                        ? h("button", {
+                          type: "button", style: SS.copyBtn, "data-prompt-predict-history-copy": "true",
+                          onClick: function () { copySuggestion(key, item.suggestion); },
+                        }, copiedKey === key ? tt(t, "settings.historyCopied") : tt(t, "settings.historyCopy"))
+                        : null)
                     : null);
               });
             })()),
 
         h("div", { style: { display: "flex", gap: 10, marginTop: 16 } },
           h("button", { style: dim(SS.btnPrimary, busy || !dirty), onClick: save, disabled: busy || !dirty }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
-          h("button", { style: dim(SS.btnGhost, busy), onClick: resetDefaults, disabled: busy }, tt(t, "settings.reset"))),
+          h("button", { style: dim(SS.btnGhost, busy), onClick: resetDefaults, disabled: busy }, tt(t, "settings.reset")),
+          h("button", {
+            style: dim(SS.btnGhost, busy), disabled: busy, "data-prompt-predict-try": "true",
+            onClick: runTry,
+          }, busy ? tt(t, "settings.testing") : tt(t, "settings.test"))),
+        tryResult
+          ? h("div", { style: SS.tryBox },
+            h("span", null, tt(t, "settings.testResult", { text: tryResult.text })),
+            tryResult.truncated ? h("span", { style: SS.warnInline }, tt(t, "ghost.truncated")) : null,
+            h("span", { style: SS.tryMeta }, tryResult.meta))
+          : null,
         msg ? h("p", { style: msg.ok ? SS.ok : SS.err }, msg.text) : null);
     }
 
     function apply(ctx) {
       // 注册词典并绑定翻译函数：DSH 的 locale 服务会把语言切换即时应用到已挂载的界面；
       // 没有该服务（旧运行时）时保持中文兜底，不会退化成显示 key。
+      watchTheme();
       try {
         if (ctx.locale && typeof ctx.locale.register === "function") {
           // 注册全部语言的词典（漏注册会让该语言的界面整屏退回中文）
