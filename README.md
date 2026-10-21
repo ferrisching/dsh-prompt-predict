@@ -43,7 +43,7 @@
 - **Follows the current session model by default** — nothing is hard-coded to a provider, the prediction call reuses whatever model the session itself uses; you can also pin a cheaper model
 - **No repeats, no dead ends** — a repeat of the previous suggestion triggers an automatic "give me a different one"; a reasoning level the real model doesn't support falls back automatically, so you never hit "settings look fine but no suggestion ever appears"
 - **Everything is adjustable** — on/off, provider / model, response timeout, context size and budget, output cap, reasoning effort; changes apply immediately, no DSH restart
-- **The UI follows your language** — switch Settings → Language to 中文 and the whole plugin UI changes at once, including the ghost hint above the composer **and the validation errors inside Settings** (those are produced by the host, which answers in the language the client sends); no reload needed, and it falls back to Chinese when no locale service is present
+- **The UI follows your language** — the plugin ships dictionaries for the languages DSH itself supports (Chinese and English), and passes every dictionary it has to the locale service. Switch Settings → Language and the whole plugin UI changes at once, including the ghost hint above the composer **and the validation errors inside Settings** (those are produced by the host, which answers in the language the client sends); no reload needed, and it falls back to Chinese when no locale service is present
 - **Zero runtime dependencies** — plain ESM on both the host and client side
 
 ## 🚀 Installation
@@ -57,7 +57,7 @@ The plugin is published on npm. Options are ordered by convenience.
 **Or the dsh CLI** — pin any published version with pnpm's `@version` syntax:
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.5
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.6
 ```
 
 Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build), then **restart DSH**.
@@ -77,8 +77,8 @@ tarball that is on npm (`shasum` matches the registry), which is handy for offli
 pinning an artifact you can verify:
 
 ```bash
-gh release download v0.2.5 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.5.tgz
+gh release download v0.2.6 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.6.tgz
 ```
 
 Same caveat as the CLI route above: add `"dsh-prompt-predict"` to `dsh.profile.bundles` yourself,
@@ -146,6 +146,7 @@ Suggestions only appear when the composer is empty and the session isn't running
 | Context budget (advanced) | Character cap sent to the helper call, 1000–20000 | 6000 |
 | Output cap (advanced) | Token cap per suggestion, 16–1024. A reply that hits the cap is retried once with a bigger budget; if it still gets cut, the ghost text is marked **cut off · raise the output cap** | 256 |
 | Reasoning effort (advanced) | Options are **generated from the model actually in use** (the session's model when following it); unsupported levels never appear | Off (fastest, cheapest) |
+| Suggestion language (advanced) | `Auto` follows the conversation; pin a language and every suggestion is written in it. 14 mainstream languages are listed up front, the rest fold behind **More languages…**, and languages with regional variants get a second **Region** dropdown: Simplified Chinese (Mainland China / Singapore / Malaysia), Traditional Chinese (Taiwan / Hong Kong), English (US / UK / Australia / Canada), Portuguese (Brazil / Portugal), Spanish (Spain / Latin America (neutral) / Mexico / Argentina / Colombia), French (France / Canada), German (Germany / Austria / Switzerland), Dutch (Netherlands / Belgium). The chosen variant is named explicitly in the prompt (e.g. *Traditional Chinese (Taiwan)*, *British English*) | Auto |
 | History size (advanced) | How many recent predictions the settings page keeps (1–50). Records live in the app's own local storage — the Electron renderer's storage in the desktop app, the page's `localStorage` on web — and are never uploaded | 10 |
 
 The bottom of the settings page shows a **recent predictions** list (default 10, adjustable): time, session, model, latency, and whether the reasoning level was auto-downgraded, a reroll happened, the suggestion was truncated by the output cap, or the call failed (with the reason). The list stays folded to the newest run (`▸ Show all` opens the rest), the newest run's suggestion text is expanded by default, and clicking a row's `▸` expands that run's text while collapsing the previous one. Records live in the app's own local storage (the Electron renderer's storage on desktop, the page's `localStorage` on web) and are never uploaded. No more guessing why nothing appeared.

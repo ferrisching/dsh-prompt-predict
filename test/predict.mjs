@@ -3,9 +3,9 @@ import http from 'node:http';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { messageText, recentMessages, normalizeSuggestion, predictNextPrompt } from '../lib/predict.mjs';
+import { messageText, recentMessages, normalizeSuggestion, predictNextPrompt, detectLanguage, detectConversationLanguage, buildSystem } from '../lib/predict.mjs';
 import { apply } from '../lib/index.js';
-import { makeT, normalizeLang, listSeparator } from '../lib/messages.mjs';
+import { makeT, normalizeLang, listSeparator, MESSAGES } from '../lib/messages.mjs';
 
 // 设置写入走 DSH_HOME，测试必须隔离到临时目录，避免污染真实配置。
 process.env.DSH_HOME = mkdtempSync(join(tmpdir(), 'dsh-prompt-predict-test-'));
@@ -66,10 +66,10 @@ const fakeCtx = {
         throw new Error('reasoning effort not supported by this model');
       }
       const prompt = options.messages?.[0]?.content?.[0]?.text ?? '';
-      // 带「必须给出」提示（去重 / reroll）时换一条（两个变体轮换，模拟「换了个说法」），
+      // 带「必须换一条」提示（去重 / reroll）时换一条（两个变体轮换，模拟「换了个说法」），
       // 否则固定返回同一条 —— 用来制造「复读」以验证去重
       let text = '"继续，直接实现并安装插件"';
-      if (/必须给出/.test(prompt)) {
+      if (/Give a DIFFERENT suggestion/.test(prompt)) {
         variant += 1;
         text = variant % 2 ? '"换个思路：先补测试再实现"' : '"先把边界情况列个清单"';
       }
@@ -102,10 +102,37 @@ const fakeCtx = {
     },
   },
 };
+// issue #1：提示词必须用英文写，并明确点名「对话语言」，否则非中文对话也会返回中文
+check('语言识别：俄语/中文/英文/空值',
+  ['Привет, помоги с плагином', '帮我改一下这个插件', 'help me fix this plugin', '']
+    .map((text) => detectLanguage(text)).join(',') === 'Russian,Chinese,English,English',
+  ['Привет, помоги с плагином', '帮我改一下这个插件', 'help me fix this plugin', '']
+    .map((text) => detectLanguage(text)).join(','));
+// 整段对话按「逐条用户消息多数票」判定：粘一段英文日志不该把俄语对话判成英文
+check('混合上下文按多数票判定语言',
+  detectConversationLanguage([
+    { role: 'user', text: 'Привет, помоги разобраться' },
+    { role: 'assistant', text: 'Sure, what is wrong?' },
+    { role: 'user', text: 'Вот лог: Error: ENOENT no such file' },
+    { role: 'user', text: 'Что делать?' },
+  ]) === 'Russian',
+  detectConversationLanguage([
+    { role: 'user', text: 'Привет, помоги разобраться' },
+    { role: 'user', text: 'Вот лог: Error: ENOENT no such file' },
+    { role: 'user', text: 'Что делать?' },
+  ]));
+
+check('默认系统提示不含中文', !/[\u4e00-\u9fff]/.test(buildSystem('Russian')), buildSystem('Russian').slice(0, 60));
+check('系统提示明确点名语言', /in Russian/.test(buildSystem('Russian')) && /in Chinese/.test(buildSystem('Chinese')));
+
 const predicted = await predictNextPrompt(fakeCtx, fakeSession, { maxTokens: 48 });
 check('生成并归一化建议', predicted.suggestion === '继续，直接实现并安装插件', predicted.suggestion);
 check('继承当前会话模型路由', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);
 check('限制输出 token', captured.maxTokens === 48, String(captured.maxTokens));
+// 中文会话：识别为 Chinese，system 与 framing 都不该是「因为提示词是中文」而让模型写中文
+check('中文会话识别为 Chinese', predicted.language === 'Chinese', String(predicted.language));
+check('请求里的 system 点名 Chinese', /in Chinese/.test(captured.system ?? ''), (captured.system ?? '').slice(0, 60));
+check('framing 用英文并点名语言', /Predict the user's next message in Chinese/.test(captured.messages?.[0]?.content?.[0]?.text ?? ''), '');
 check('标记辅助调用用途', captured.purpose === 'prompt-prediction' && captured.sessionId === 'session-test', `${captured.purpose}/${captured.sessionId}`);
 // 输出上限截断（finish.reason.kind === 'max-tokens'）与默认上限：新增调用会覆盖 captured，测完还原
 const optionsBeforeExtras = captured;
@@ -115,6 +142,15 @@ finishKind = 'stop';
 const defaultRun = await predictNextPrompt(fakeCtx, fakeSession);
 const defaultCap = captured.maxTokens;
 captured = optionsBeforeExtras;
+// i18n：模型用其它语言写的前缀也要剥掉（否则 ghost 里会带着「Suggestion:」）
+check('剥掉六种语言的「建议：」前缀',
+  ['建议：先补测试', 'Suggestion: add a test', 'Prédiction : écrire un test',
+   'Предложение: напиши тест', 'Predicción: escribe un test', 'الاقتراح: اكتب اختبارًا']
+    .map((text) => normalizeSuggestion(text)).join('|') === '先补测试|add a test|écrire un test|напиши тест|escribe un test|اكتب اختبارًا',
+  ['建议：先补测试', 'Suggestion: add a test', 'Prédiction : écrire un test',
+   'Предложение: напиши тест', 'Predicción: escribe un test', 'الاقتراح: اكتب اختبارًا']
+    .map((text) => normalizeSuggestion(text)).join('|'));
+
 check('正常结束时 truncated=false', predicted.truncated === false, `truncated=${predicted.truncated}`);
 check('finish=max-tokens 时标记 truncated', cutRun.truncated === true && defaultRun.truncated === false,
   `截断=${cutRun.truncated} 正常=${defaultRun.truncated}`);
@@ -227,6 +263,53 @@ const historyBad = await request('/dsh-prompt-predict/settings', 'POST', { histo
 check('记录条数越界被拒', historyBad.json.ok === false && /1–50|1-50/.test(String(historyBad.json.reason)), String(historyBad.json.reason));
 await request('/dsh-prompt-predict/settings', 'POST', { historySize: 10 });
 
+// 建议语言：默认 auto（跟随对话），可以固定成某种语言
+const langDefault = await request('/dsh-prompt-predict/status');
+check('status 返回语言候选清单', Array.isArray(langDefault.json.languages) && langDefault.json.languages.includes('ru') && langDefault.json.languages.length >= 40,
+  String((langDefault.json.languages || []).length));
+check('建议语言默认 auto', langDefault.json.effective?.suggestionLanguage === 'auto',
+  String(langDefault.json.effective?.suggestionLanguage));
+const langSet = await request('/dsh-prompt-predict/settings', 'POST', { suggestionLanguage: 'ru' });
+check('建议语言可固定为 ru', langSet.json.ok === true && langSet.json.effective.suggestionLanguage === 'ru',
+  String(langSet.json.reason ?? langSet.json.effective?.suggestionLanguage));
+await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
+check('固定语言后提示词按该语言书写（不看对话内容）',
+  /in Russian/.test(captured.system ?? '') && /in Russian/.test(captured.messages?.[0]?.content?.[0]?.text ?? ''),
+  (captured.system ?? '').slice(0, 40));
+// 清单之外的合法代码（乌克兰语）同样要能用：不限定固定几种
+const langExtra = await request('/dsh-prompt-predict/settings', 'POST', { suggestionLanguage: 'uk' });
+check('清单外的合法语言（uk）也能固定', langExtra.json.ok === true && langExtra.json.effective.suggestionLanguage === 'uk',
+  String(langExtra.json.reason ?? langExtra.json.effective?.suggestionLanguage));
+await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
+check('uk 的提示词语言名正确', /in Ukrainian/.test(captured.system ?? ''), (captured.system ?? '').slice(0, 40));
+// 繁体中文要明确到地区，否则模型会随机挑字形
+for (const [code, needle] of [
+  ['zh', 'Simplified Chinese'],
+  ['zh-CN', 'Simplified Chinese (Mainland China)'],
+  ['zh-SG', 'Simplified Chinese (Singapore)'],
+  ['zh-MY', 'Simplified Chinese (Malaysia)'],
+  ['zh-Hant', 'Traditional Chinese'],
+  ['zh-TW', 'Traditional Chinese (Taiwan; 繁體中文'],
+  ['zh-HK', 'Traditional Chinese (Hong Kong; 繁體中文'],
+  ['en-US', 'American English'],
+  ['en-GB', 'British English'],
+  ['pt-BR', 'Brazilian Portuguese'],
+  ['pt-PT', 'European Portuguese'],
+  ['es-419', 'Latin American Spanish'],
+  ['fr-CA', 'Canadian French'],
+  ['de-CH', 'Swiss High German'],
+  ['nl-BE', 'Flemish'],
+]) {
+  const saved = await request('/dsh-prompt-predict/settings', 'POST', { suggestionLanguage: code });
+  await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
+  check(`${code} 的提示词写明字形/地区`,
+    saved.json.ok === true && String(captured.system ?? '').includes(needle),
+    `${saved.json.ok} ${(captured.system ?? '').slice(0, 50)}`);
+}
+const langBad = await request('/dsh-prompt-predict/settings', 'POST', { suggestionLanguage: 'xx' });
+check('不支持的语言被拒绝', langBad.json.ok === false && /语言/.test(langBad.json.reason ?? ''), String(langBad.json.reason));
+await request('/dsh-prompt-predict/settings', 'POST', { suggestionLanguage: 'auto' });
+
 const disabled = await request('/dsh-prompt-predict/settings', 'POST', { enabled: false });
 check('关闭联想后生效', disabled.json.ok === true && disabled.json.effective.enabled === false, String(disabled.json.effective?.enabled));
 const blocked = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
@@ -292,7 +375,7 @@ check('连续同一条建议触发去重重试',
   && dedupeSecond.json.suggestion !== dedupeFirst.json.suggestion,
   JSON.stringify({ first: dedupeFirst.json.suggestion, second: dedupeSecond.json.suggestion, dedup: dedupeSecond.json.dedupRetry }));
 check('去重提示确实进入模型请求',
-  streamCalls.some((c) => /必须给出/.test(c.messages?.[0]?.content?.[0]?.text ?? '')), '');
+  streamCalls.some((c) => /Give a DIFFERENT suggestion/.test(c.messages?.[0]?.content?.[0]?.text ?? '')), '');
 
 // reroll：用户点「换一条」时首轮就带 avoid，必须给出不同的
 streamCalls = [];
@@ -302,7 +385,7 @@ const rerolled = await request('/dsh-prompt-predict/suggest', 'POST', {
 check('reroll 首轮即要求换一条',
   rerolled.json.ok === true
   && rerolled.json.suggestion !== '换个思路：先补测试再实现'      // 最终结果与传入的 avoid 不同
-  && /必须给出/.test(streamCalls[0]?.messages?.[0]?.content?.[0]?.text ?? ''),  // 且是**首轮**就带了提示
+  && /Give a DIFFERENT suggestion/.test(streamCalls[0]?.messages?.[0]?.content?.[0]?.text ?? ''),  // 且是**首轮**就带了提示
   JSON.stringify({ suggestion: rerolled.json.suggestion }));
 
 check('建议响应带耗时字段', typeof dedupeSecond.json.ms === 'number' && dedupeSecond.json.ms >= 0, String(dedupeSecond.json.ms));
@@ -310,8 +393,9 @@ check('建议响应带耗时字段', typeof dedupeSecond.json.ms === 'number' &&
 // ================= Host 端错误原因的双语 =================
 check('normalizeLang 归一化',
   normalizeLang('en-US') === 'en' && normalizeLang('zh-CN') === 'zh'
-  && normalizeLang(['en-GB']) === 'en' && normalizeLang('') === 'zh' && normalizeLang('fr') === 'zh',
-  [normalizeLang('en-US'), normalizeLang('zh-CN'), normalizeLang('fr')].join('/'));
+  && normalizeLang(['en-GB']) === 'en' && normalizeLang('') === 'zh'
+  && normalizeLang('fr') === 'zh' && normalizeLang('de-DE') === 'zh',   // 只支持 DSH 界面语言，其它回落中文
+  [normalizeLang('en-US'), normalizeLang('zh-CN'), normalizeLang('fr'), normalizeLang('de-DE')].join('/'));
 check('listSeparator 跟着语言走', listSeparator('zh') === '、' && listSeparator('en') === ', ', '');
 check('makeT 插值', makeT('en')('err.modelUnknown', { provider: 'p', model: 'm' }) === 'Provider "p" has no model "m"',
   makeT('en')('err.modelUnknown', { provider: 'p', model: 'm' }));
@@ -343,6 +427,16 @@ check('预测内部失败原因双语',
   `${zhPredictErr} | ${enPredictErr}`);
 
 const noHeader = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 10 });
+check('x-dsh-locale: en 时错误文案用英语',
+  (await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 9999 }, { 'x-dsh-locale': 'en' }))
+    .json.reason?.includes('Output cap') === true, '');
+check('normalizeLang 识别中英与未知语言',
+  ['zh-CN', 'en-US', 'ru-RU'].map((v) => normalizeLang(v)).join(',') === 'zh,en,zh',
+  ['zh-CN', 'en-US', 'ru-RU'].map((v) => normalizeLang(v)).join(','));
+check('中英 host 词典 key 对称',
+  Object.keys(MESSAGES.zh).length === Object.keys(MESSAGES.en).length,
+  `zh=${Object.keys(MESSAGES.zh).length} en=${Object.keys(MESSAGES.en).length}`);
+
 check('不带语言头时回落中文', /上下文预算/.test(noHeader.json.reason ?? ''), String(noHeader.json.reason));
 
 await new Promise((resolve) => server.close(resolve));

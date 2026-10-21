@@ -43,7 +43,7 @@
 - **默认跟随当前会话模型**：不写死任何提供商，联想调用沿用会话自身选用的模型；也可以在设置页固定到某个更便宜的模型
 - **不会复读、不会卡死**：连续两轮撞车时自动要求换一条；思考档位与真实模型不兼容时自动降级重试，不会出现「设置都对但永远没建议」
 - **全部可调**：开关、提供商 / 模型、响应超时、上下文规模与预算、输出上限、思考深度，保存后立即生效，无需重启 DSH
-- **界面跟随语言设置**：把「设置 → 语言」切成 English，插件界面立刻变英文——包括输入框上的 ghost 提示与**设置里的校验报错**（报错文案由 Host 生成，会按请求带来的语言返回），无需刷新；没有语言服务时回落中文
+- **界面跟随语言设置**：插件随 DSH 自身支持的界面语言提供词典（中文、英文），并把已有词典全部注册给 locale 服务。切换「设置 → 语言」后插件界面立刻跟着变——包括输入框上的 ghost 提示与**设置里的校验报错**（报错文案由 Host 生成，会按请求带来的语言返回），无需刷新；没有语言服务时回落中文
 - **零运行时依赖**：纯 ESM，Host 端与客户端都不引入第三方包
 
 ## 🚀 安装
@@ -57,7 +57,7 @@
 **或者用 dsh CLI**——想装某个已发布版本就用 pnpm 的 `@版本` 语法：
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.5
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.6
 ```
 
 `--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`），**装完重启 DSH 生效**。
@@ -75,8 +75,8 @@ dsh plugin --profile desktop add dsh-prompt-predict@0.2.5
 **完全一致**的 tarball（`shasum` 与 registry 相同），适合离线机器或需要自行校验产物的场景：
 
 ```bash
-gh release download v0.2.5 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.5.tgz
+gh release download v0.2.6 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.6.tgz
 ```
 
 与上面 CLI 路径同样的注意点：请自己把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles`，
@@ -144,6 +144,7 @@ pnpm add /path/to/dsh-prompt-predict
 | 上下文预算（高级） | 送进辅助调用的字符上限，1000–20000 | 6000 |
 | 输出上限（高级） | 单条建议的 token 上限，16–1024。撞上限会自动放宽重问一次；仍被截断时 ghost 上会标 **已截断 · 建议调高输出上限（max tokens）**，照着调即可 | 256 |
 | 思考深度（高级） | 选项**按真实使用的模型动态生成**（跟随会话时按会话模型），模型不支持的档位不会出现 | 关闭（最快最省） |
+| 建议语言（高级） | `自动` 跟随对话；也可固定成某种语言。下拉先列 14 种主流语言，其余收进「更多语言…」；带地区变体的语言会多出**地区**下拉：简体中文（中国大陆/新加坡/马来西亚）、繁體中文（台灣/香港）、English（美/英/澳/加）、Português（巴西/葡萄牙）、Español（西班牙/拉丁美洲（中性）/墨西哥/阿根廷/哥伦比亚）、Français（法國/加拿大）、Deutsch（德國/奧地利/瑞士）、Nederlands（荷蘭/比利時）。每个列表第一项就是该语言的默认地区，不再有含糊的「通用」。选中的变体会明确写进提示词（如 *Traditional Chinese (Taiwan)*、*British English*） | 自动 |
 | 记录条数（高级） | 设置页保留最近多少次预测记录（1–50）。记录存在应用自身的 `localStorage`（桌面端是 Electron 渲染层存储，Web 端是页面 localStorage；都只在本机、不上传） | 10 |
 
 设置页底部是**最近预测**列表（默认 10 条，可调）：时间、**哪个会话**、所用模型、耗时，以及是否自动降级了思考档位 / 换过一条 / 被输出上限截断，失败时直接显示原因；列表默认只显示最新一条（`▸ 展开全部` 看其余），最新一条原文默认展开，点其它行的 `▸` 会展开它并自动收起上一条；记录存在应用自身的 `localStorage`（桌面端是 Electron 渲染层，Web 端是页面存储），不会上传——联想出问题时不必靠猜。
@@ -164,7 +165,7 @@ pnpm add /path/to/dsh-prompt-predict
 | POST | `/dsh-prompt-predict/settings` | 保存设置；`{ "reset": true }` 恢复默认 |
 | POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → 一条建议 |
 
-所有接口都认一个可选请求头 **`x-dsh-locale`**（`zh` / `en`，或缺省即中文）：它决定校验错误与预测失败原因用哪种语言返回。客户端会自动带上当前界面语言。
+所有接口都认一个可选请求头 **`x-dsh-locale`**（`zh` / `en`，缺省即中文）：它决定校验错误与预测失败原因用哪种语言返回。客户端会自动带上当前界面语言。
 
 ## 🧩 工作原理
 
