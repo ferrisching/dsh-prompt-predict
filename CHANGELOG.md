@@ -6,6 +6,95 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.7] — 2026-10-21
+
+### Fixed
+
+- **The ghost now disappears on paste, IME composition and drag-drop**, not only on printable keypresses.
+  On DSH 0.2.1-rc.2 the slot no longer exposes the composer draft, so a `Cmd+V` (keydown carries
+  `metaKey`) or a Chinese IME (`key === "Process"`) used to leave the suggestion sitting on top of the
+  text the user had just inserted.
+- **No suggestion is shown or requested while the composer already has a draft.** The draft guard used
+  `useInput(...).draft`, which is empty since rc.2, so a half-written message could be covered by a ghost
+  — and the prediction call was spent anyway. The editor's own DOM text is used instead (the placeholder
+  is a sibling node, so it does not leak in), and clearing the draft re-arms the prediction.
+
+### Added
+
+- **A composer-side hint after repeated failures.** Two failed predictions in a row now print a short
+  line where the ghost would be ("Prediction failed: …"), instead of failing silently; it goes away as
+  soon as a prediction succeeds or you start typing.
+- **Pause for 10 minutes.** A switch in the settings page stops predictions for ten minutes with a live
+  countdown ("Paused - 7:31 left"), then resumes automatically. The deadline is stored locally so it
+  survives a reload, and no prediction call is made while paused (the "Test now" button still works,
+  since that is an explicit action).
+- **Clearing and copying the history.** A "Clear" button wipes the stored runs (list and
+  `localStorage`), and each expanded run has a "Copy" button for the suggestion text.
+- **"Test now" in the settings page.** It calls the same `/suggest` endpoint the composer uses, so the
+  result reflects the real chain — model route, language, length, widen-retry — and is written to the
+  history like any other run. Useful right after installing or changing a setting.
+- **Suggestion language and output length moved out of "Advanced"** into the main settings block; the
+  advanced section keeps timeout, context size/budget, reasoning effort and history size only.
+
+### Fixed
+
+- **The cost table said three calls, the code allows four.** The worst case is primary + reasoning-level
+  fallback + length retry + reroll; both READMEs now say four.
+- **"Test now" printed a hard-coded `ms`** instead of the localised unit, and a long provider error in
+  the composer failure hint is now clipped to 80 characters (the full reason stays in the history).
+
+### Added
+
+- **Light and dark themes.** Text, backgrounds, borders and state colours now prefer DSH's own design
+  tokens (`--dsw-alias-label-*`, `--dsw-alias-bg-*`, `--dsw-alias-border-*`, `--dsw-alias-state-*`, which
+  follow the app's theme) and fall back to a local light/dark palette driven by
+  `prefers-color-scheme`. Live switching works without a reload.
+- **Undo after clearing the history**, available for five seconds.
+- **The failure counter is now shared across composer docks** (a failure in one session no longer
+  resets the count for another), while the hint still only appears in the session that failed last.
+- The "Test now" button explains (on hover) that it keeps working while predictions are paused.
+- **The settings page shows the plugin version** next to its title (`/status` now reports it, read from
+  `package.json`, so it can never drift).
+- **`color-scheme` is declared on the settings card**, so native controls (number spinners, select
+  popups) follow dark mode too, not just our own colours.
+
+### Changed
+
+- **Shorter settings hints.** The explanatory sentences under *Suggestion language*, *Output length* and
+  *Pause* were cut to one short line each; the full explanation moved into the hover tooltip
+  (`title`), and the pause button no longer wraps onto two lines. Hints that carry a longer explanation
+  now show a dotted underline and a `help` cursor. The native `title` tooltip turned out not to appear in
+  the renderer (only the cursor changed), so the explanation is rendered as a small floating bubble **below** the short hint on hover/focus. The
+  bubble is absolutely positioned (the row height does not change) and `pointer-events: none`, so it can
+  never block the control underneath; the row itself only gets a relative anchor. It is anchored to the
+  right edge and grows leftwards, because the hint sits at the end of the row and a left-anchored bubble
+  was clipped by the card's right edge. the ghost's "cut off" marker expands the settings path inline on hover instead. The ghost's "cut off"
+  marker had a tooltip that could never appear (the overlay is `pointer-events: none`); that marker now
+  accepts pointer events, so its hint shows on hover.
+
+### Documentation
+
+- **Troubleshooting section** in both READMEs: what to check when no suggestion appears, what each
+  "prediction failed" reason means, how to fix a wrong suggestion language, what "cut off" implies,
+  why `Tab` can do nothing, and which changes need a restart versus a reload. The cost section also
+  stopped quoting the old `maxTokens: 64` default.
+
+### Changed
+
+- **Contrast and hit areas.** The ghost text moved from `#9aa3b2` (~2.9:1 on white) to `#6b7280`
+  (~4.8:1, WCAG AA), the muted hints were darkened too, and the `Tab` / `↻` controls grew from 19px to
+  24px with larger labels.
+- **The setting is now a length, not a token cap.** "Output length" takes 20-400 **characters** and the
+  host derives a generous token ceiling from it (CJK ~0.6 chars/token + 256 reasoning headroom, other
+  languages ~2.5 chars/token), clamped to 64-1024. The character budget also goes into rule 6 of the
+  prompt, so the model aims for a complete short sentence instead of running into the ceiling and being
+  cut. Old configs that only have `maxTokens` are migrated on read. A reply that still gets cut (or
+  spends the whole budget on reasoning) now triggers the widen-retry instead of failing outright.
+- The output-cap hint no longer claims "256 tokens is about 64 Chinese characters". That estimate was
+  language- and tokenizer-specific (and reasoning models spend part of the budget before any text), so
+  the hint now explains what the cap does and lets the ghost's **cut off** marker tell you when to raise
+  it. The truncation warning also suggests a concrete bump (512) instead of the stale 320.
+
 ## [0.2.6] — 2026-10-21
 
 ### Added

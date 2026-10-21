@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import http from 'node:http';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, recentMessages, normalizeSuggestion, predictNextPrompt, detectLanguage, detectConversationLanguage, buildSystem } from '../lib/predict.mjs';
@@ -43,6 +43,7 @@ let failWhenEffort = false;
 let variant = 0;
 let finishKind = 'stop';   // 模拟 finish.reason.kind：'stop' | 'max-tokens'
 let truncateNext = false;  // 让下一次调用返回「被输出上限截断」的半句
+let emptyTruncateNext = false;  // 让下一次调用返回「空正文 + max-tokens」
 const fakeSession = {
   id: 'session-test',
   requestHeader: () => ({ config: { provider: 'provider-current', model: 'model-current' } }),
@@ -74,6 +75,11 @@ const fakeCtx = {
         text = variant % 2 ? '"换个思路：先补测试再实现"' : '"先把边界情况列个清单"';
       }
       yield { type: 'block-start', block: { type: 'text' } };
+      if (emptyTruncateNext) {
+        emptyTruncateNext = false;
+        yield { type: 'finish', reason: { kind: 'max-tokens' } };   // 只有 reasoning，没有正文
+        return;
+      }
       if (truncateNext) {
         truncateNext = false;
         yield { type: 'text-delta', text: '"继续，直接实现' };
@@ -132,6 +138,7 @@ check('限制输出 token', captured.maxTokens === 48, String(captured.maxTokens
 // 中文会话：识别为 Chinese，system 与 framing 都不该是「因为提示词是中文」而让模型写中文
 check('中文会话识别为 Chinese', predicted.language === 'Chinese', String(predicted.language));
 check('请求里的 system 点名 Chinese', /in Chinese/.test(captured.system ?? ''), (captured.system ?? '').slice(0, 60));
+check('系统提示带字数预算（120 字 → 约 72 字）', /within about \d+ characters/.test(captured.system ?? ''), (captured.system.match(/within about \d+ characters/) || [''])[0]);
 check('framing 用英文并点名语言', /Predict the user's next message in Chinese/.test(captured.messages?.[0]?.content?.[0]?.text ?? ''), '');
 check('标记辅助调用用途', captured.purpose === 'prompt-prediction' && captured.sessionId === 'session-test', `${captured.purpose}/${captured.sessionId}`);
 // 输出上限截断（finish.reason.kind === 'max-tokens'）与默认上限：新增调用会覆盖 captured，测完还原
@@ -154,7 +161,12 @@ check('剥掉六种语言的「建议：」前缀',
 check('正常结束时 truncated=false', predicted.truncated === false, `truncated=${predicted.truncated}`);
 check('finish=max-tokens 时标记 truncated', cutRun.truncated === true && defaultRun.truncated === false,
   `截断=${cutRun.truncated} 正常=${defaultRun.truncated}`);
-check('默认输出上限为 256 token', defaultCap === 256, `默认=${defaultCap}`);
+check('未传字数时 token 上限仍按旧默认 256', defaultCap === 256, `默认=${defaultCap}`);
+// 新的用户契约：给字数上限，token 上限由语言推导（中日韩 0.6 字/token + 256 预留）
+const byChars = await predictNextPrompt(fakeCtx, fakeSession, { outputChars: 120 });
+check('字数上限直接进提示词、token 上限由语言推导',
+  /within about 120 characters/.test(captured.system ?? '') && captured.maxTokens === 456 && byChars.tokenCap === 456,
+  `budget=${(captured.system.match(/within about \d+ characters/) || [''])[0]} maxTokens=${captured.maxTokens}`);
 
 // Host 路由端到端（本地 HTTP）
 let route;
@@ -306,6 +318,15 @@ for (const [code, needle] of [
     saved.json.ok === true && String(captured.system ?? '').includes(needle),
     `${saved.json.ok} ${(captured.system ?? '').slice(0, 50)}`);
 }
+// 正文为空且撞上限（reasoning 吃光预算）：要自动放宽重试，而不是直接报失败
+const emptyCalls = streamCalls.length;
+emptyTruncateNext = true;
+const emptyThenOk = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-widen' });
+check('空正文+截断时自动放宽重试并拿到建议',
+  emptyThenOk.json.ok === true && String(emptyThenOk.json.suggestion ?? '').trim().length > 0
+  && streamCalls.length - emptyCalls >= 2,
+  `ok=${emptyThenOk.json.ok} suggestion=${emptyThenOk.json.suggestion} 调用=${streamCalls.length - emptyCalls}`);
+
 const langBad = await request('/dsh-prompt-predict/settings', 'POST', { suggestionLanguage: 'xx' });
 check('不支持的语言被拒绝', langBad.json.ok === false && /语言/.test(langBad.json.reason ?? ''), String(langBad.json.reason));
 await request('/dsh-prompt-predict/settings', 'POST', { suggestionLanguage: 'auto' });
@@ -337,22 +358,30 @@ const statusNoSession = await request('/dsh-prompt-predict/status');
 check('status 不带 sessionId 时 sessionModel 为 null',
   statusNoSession.json.sessionModel === null, String(statusNoSession.json.sessionModel));
 
-const budget = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 8000, maxTokens: 128 });
-check('保存上下文预算与输出上限', budget.json.ok === true
-  && budget.json.effective.maxChars === 8000 && budget.json.effective.maxTokens === 128,
-  JSON.stringify({ maxChars: budget.json.effective?.maxChars, maxTokens: budget.json.effective?.maxTokens }));
+const statusDefault = await request('/dsh-prompt-predict/status');
+check('默认字数上限 120 字', statusDefault.json.effective?.outputChars === 120, String(statusDefault.json.effective?.outputChars));
+// status 要带上插件版本（设置页显示用），且与 package.json 一致
+const statusVersion = await request('/dsh-prompt-predict/status');
+const pkgVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+check('status 返回插件版本且与 package.json 一致',
+  statusVersion.json.version === pkgVersion, `${statusVersion.json.version} vs ${pkgVersion}`);
+
+const budget = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 8000, outputChars: 100 });
+check('保存上下文预算与字数额度', budget.json.ok === true
+  && budget.json.effective.maxChars === 8000 && budget.json.effective.outputChars === 100,
+  JSON.stringify({ maxChars: budget.json.effective?.maxChars, outputChars: budget.json.effective?.outputChars }));
 
 const badChars = await request('/dsh-prompt-predict/settings', 'POST', { maxChars: 10 });
 check('上下文预算越界被拒绝', badChars.json.ok === false && /上下文预算/.test(badChars.json.reason ?? ''), String(badChars.json.reason));
 
 const badTokens = await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 9999 });
 check('输出上限越界被拒绝', badTokens.json.ok === false && /输出上限/.test(badTokens.json.reason ?? ''), String(badTokens.json.reason));
-const maxTokens = await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 1024 });
-check('输出上限可以调到 1024', maxTokens.json.ok === true && maxTokens.json.effective.maxTokens === 1024,
-  String(maxTokens.json.reason ?? maxTokens.json.effective?.maxTokens));
-const overTokens = await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 1025 });
-check('输出上限 1025 被拒绝', overTokens.json.ok === false && /1024/.test(overTokens.json.reason ?? ''), String(overTokens.json.reason));
-await request('/dsh-prompt-predict/settings', 'POST', { maxTokens: 256 });
+const charsMax = await request('/dsh-prompt-predict/settings', 'POST', { outputChars: 400 });
+check('字数上限可以调到 400', charsMax.json.ok === true && charsMax.json.effective.outputChars === 400,
+  String(charsMax.json.reason ?? charsMax.json.effective?.outputChars));
+const charsOver = await request('/dsh-prompt-predict/settings', 'POST', { outputChars: 401 });
+check('字数上限 401 被拒绝', charsOver.json.ok === false && /400/.test(charsOver.json.reason ?? ''), String(charsOver.json.reason));
+await request('/dsh-prompt-predict/settings', 'POST', { outputChars: 120 });
 
 // 降级重试：档位不被真实模型支持时自动丢掉档位再试，否则用户只会看到「永远没有建议」
 await request('/dsh-prompt-predict/settings', 'POST', { provider: 'provider-effort', model: 'model-r', reasoningEffort: 'high' });

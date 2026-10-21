@@ -140,14 +140,27 @@ const textOf = (tree) => find(tree, () => true)
 
 // ---------------- 浏览器环境替身 ----------------
 function makeEnv() {
+  const editorListeners = new Map();
   const editor = {
     getBoundingClientRect: () => ({ left: 100, top: 200, width: 400, height: 40 }),
     parentElement: { querySelector: () => null },
     focus() {},
     innerText: '',
+    textContent: '',
+    addEventListener: (type, fn) => { editorListeners.set(type, fn); },
+    removeEventListener: (type) => { editorListeners.delete(type); },
+    emit: (type) => { const fn = editorListeners.get(type); if (fn) fn({ type }); },
   };
   const listeners = new Map();
+  let dark = false;
+  const mediaListeners = new Set();
   const window = {
+    matchMedia: (query) => ({
+      get matches() { return /dark/.test(query) ? dark : !dark; },
+      addEventListener: (type, fn) => { if (type === 'change') mediaListeners.add(fn); },
+      addListener: (fn) => mediaListeners.add(fn),
+    }),
+    setDark(value) { dark = value; mediaListeners.forEach((fn) => fn({ matches: value })); },
     addEventListener: (type, fn) => { listeners.set(type, fn); },
     removeEventListener: (type) => { listeners.delete(type); },
     dispatchEvent: (event) => { const fn = listeners.get(event.type); if (fn) fn(event); return true; },
@@ -161,28 +174,34 @@ function makeEnv() {
     removeItem: (k) => { storage.delete(k); },
     clear: () => storage.clear(),
   };
+  const clipboard = { text: null, writeText(t) { this.text = t; return Promise.resolve(); } };
   const document = {
+    body: { appendChild() {}, removeChild() {} },
+    execCommand: () => true,
     querySelector: (sel) => (String(sel).includes('data-composer-input') ? editor : null),
     querySelectorAll: () => [],
     createElement: () => ({ style: {}, setAttribute() {}, appendChild() {} }),
   };
-  return { window: Object.assign(window, { localStorage }), document, editor, listeners, localStorage };
+  return { window: Object.assign(window, { localStorage }), document, editor, listeners, localStorage, clipboard };
 }
 
 // ---------------- 加载 client.js ----------------
 let testUserAgent = 'node-test';
-let fetchResult = { suggestion: '先补测试再实现' };
+let fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 function loadClient(localeService) {
   const env = makeEnv();
   let registration = null;
   const sandbox = {
     window: env.window,
     document: env.document,
-    navigator: { get userAgent() { return testUserAgent; } },
+    navigator: { get userAgent() { return testUserAgent; }, clipboard: env.clipboard },
     console,
     // 忽略延时（插件里有个 350ms 的「等回复停稳再预测」），让测试不必真等
     setTimeout: (fn) => setTimeout(fn, 0),
     clearTimeout,
+    // 沙箱里 interval 只跑一次，够用来验证「刷新一次剩余时间」
+    setInterval: (fn) => setTimeout(fn, 0),
+    clearInterval: clearTimeout,
     queueMicrotask,
     getComputedStyle: () => ({
       paddingLeft: '0px', paddingTop: '0px', fontFamily: 'sans', fontSize: '14px', lineHeight: '20px', fontWeight: '400',
@@ -330,9 +349,34 @@ check('设置页含关键设置项',
 const advToggle = find(settings.tree, (n) => n.type === 'button' && typeof n.props?.children === 'string' && /高级/.test(n.props.children))[0];
 advToggle?.props?.onClick?.();
 await settings.settle();
-check('输出上限提示写明可手动调高',
-  /调高/.test(textOf(settings.tree)) && /1024/.test(textOf(settings.tree)),
-  '缺少「截断就调高」的提示');
+check('输出长度按字数设置（20–400），提示里不再要求换算 token',
+  (() => {
+    const input = find(settings.tree, (n) => n.props && n.props['data-prompt-predict-chars'] === 'true')[0];
+    const text = textOf(settings.tree);
+    return Boolean(input) && input.props.max === 400 && input.props.min === 20
+      && /字数上限/.test(text) && !/token（16/.test(text);
+  })(), '字数上限控件检查');
+// 拉丁语系给「约 N 个单词」参考；中文本来就是按字，不给换算
+{
+  const inst2 = setup(makeLocale('zh'));
+  // 先挂 composer dock：设置页要靠它拿到 liveSessionId 才能发起「试一下」
+  const dock2 = mount(inst2.react, inst2.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dock2.settle();
+  const C2 = inst2.registered['settings.section'].Component;
+  const view2 = mount(inst2.react, C2, () => ({}));
+  await view2.settle();
+  find(view2.tree, (n) => n.type === 'button' && typeof n.props?.children === 'string' && /高级/.test(n.props.children))[0]?.props?.onClick?.();
+  await view2.settle();
+  const pickLang = () => find(view2.tree, (n) => n.props && n.props['data-prompt-predict-language'] === 'true')[0];
+  pickLang()?.props?.onChange?.({ target: { value: 'en' } });
+  await view2.settle();
+  check('英文建议时字数旁给出「约 N 个词」参考',
+    /约 \d+ 个词/.test(textOf(view2.tree)), textOf(view2.tree).slice(-110));
+  pickLang()?.props?.onChange?.({ target: { value: 'zh' } });
+  await view2.settle();
+  check('中文建议时不显示单词换算', !/个单词/.test(textOf(view2.tree)), textOf(view2.tree).slice(-90));
+}
+
 // 建议语言：默认 auto，下拉里含固定语言选项（同在「高级」里）
 const langSelect = find(settings.tree, (n) => n.type === 'select'
   && (n.props?.children || []).some((c) => c?.props?.value === 'ru'))[0];
@@ -432,7 +476,7 @@ const langValues = (langSelect?.props?.children || []).map((c) => c?.props?.valu
   await view.settle();
   check('点「更多语言…」后展开其余语言', values(pick()).includes('uk') && !values(pick()).includes('__more__'),
     values(pick()).join(','));
-  fetchResult = { suggestion: '先补测试再实现' };
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 }
 
 check('设置页有「建议语言」下拉且默认 auto',
@@ -447,7 +491,7 @@ env.window.dispatchEvent({ type: 'dsh-prompt-predict:run', detail: { latest: tru
 await settings.settle();
 const afterTruncation = textOf(settings.tree);
 check('上次预测被截断时设置页就地提示调高上限',
-  /被输出上限截断/.test(afterTruncation) && /320/.test(afterTruncation),
+  /被长度限制截断/.test(afterTruncation) && /200/.test(afterTruncation),
   afterTruncation.slice(0, 80));
 // 多条记录都必须在列表里（不是只显示最新一条）
 check('记录条数如实统计（2 条存在，默认只渲染 1 行）',
@@ -477,6 +521,231 @@ check('设置页列出最近预测（含会话标题）',
     /Electron 渲染层|Electron renderer/.test(electronText) && !/浏览器的 localStorage/.test(electronText),
     electronText.slice(0, 60));
   testUserAgent = 'node-test';
+}
+
+// 详细说明放在自绘 tooltip 里（原生 title 在这个渲染环境不弹，只变光标）：
+// 鼠标移入要能渲染出完整文案，移出要收起
+{
+  const inst = setup(makeLocale('zh'));
+  const dock = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dock.settle();
+  const settingsView = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await settingsView.settle();
+  const hints = () => find(settingsView.tree, (n) => n.props && n.props['data-prompt-predict-hint-more'] === 'true');
+  check('三条提示都可悬停', hints().length >= 3, `可悬停提示 ${hints().length} 个`);
+  const hasHelpCursor = (node) => find(node, (n) => n.props?.style?.cursor === 'help').length > 0;
+  check('可悬停提示有视觉提示（cursor: help）', hints().every(hasHelpCursor), '');
+  const before = textOf(settingsView.tree);
+  check('未悬停时不显示气泡', !/默认按对话判断语言/.test(before), '');
+  hints()[0]?.props?.onMouseEnter?.();
+  await settingsView.settle(3);
+  check('悬停后渲染完整说明', /默认按对话判断语言/.test(textOf(settingsView.tree)),
+    textOf(settingsView.tree).slice(-120));
+  const detail = find(settingsView.tree, (n) => n.props?.role === 'tooltip')[0];
+  // 气泡是浮层：绝对定位、不占布局（行高不变）、不接收鼠标事件（不挡下面控件）
+  check('详情是浮层气泡（绝对定位，不改变行高）',
+    detail?.props?.style?.position === 'absolute' && Number(detail?.props?.style?.zIndex) >= 10,
+    JSON.stringify(detail?.props?.style));
+  // 提示在行尾，气泡必须从右边缘向左扩展，否则会越过卡片右边被裁掉
+  check('气泡向右对齐、向左扩展',
+    detail?.props?.style?.insetInlineEnd === 0 && detail?.props?.style?.insetInlineStart === undefined,
+    JSON.stringify({ end: detail?.props?.style?.insetInlineEnd, start: detail?.props?.style?.insetInlineStart }));
+  check('气泡不接收鼠标事件（不会挡住下面的设置项）',
+    detail?.props?.style?.pointerEvents === 'none', String(detail?.props?.style?.pointerEvents));
+  const stack = find(settingsView.tree, (n) => n.props && n.props['data-prompt-predict-hint-more'] === 'true')[0];
+  check('提示容器只做定位锚点（不额外占高度）',
+    stack?.props?.style?.position === 'relative' && stack.props.style.display === 'inline-block'
+    && stack.props.style.flexDirection === undefined,
+    JSON.stringify(stack?.props?.style));
+  const shortText = find(stack, (n) => n.props?.children === '跟随对话，也可固定')[0];
+  check('短文案样式存在（cursor/下划线），不能是 undefined',
+    shortText?.props?.style?.cursor === 'help', JSON.stringify(shortText?.props?.style));
+  hints()[0]?.props?.onMouseLeave?.();
+  await settingsView.settle(3);
+  check('移出后气泡收起', !/默认按对话判断语言/.test(textOf(settingsView.tree)), '');
+}
+
+{
+  const inst = setup();
+  fetchResult = { suggestion: '刷新后验证了三点都正常，但展开全', truncated: true };
+  const dock = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dock.settle();
+  const chip = () => find(dock.tree, (n) => n.props && n.props['data-prompt-predict-truncated'] === 'true')[0];
+  check('「已截断」标记可接收鼠标事件（覆盖层其余部分不可）',
+    chip()?.props?.style?.pointerEvents === 'auto', JSON.stringify(chip()?.props?.style));
+  check('未悬停时显示短文案', /建议调高字数上限/.test(textOf(dock.tree)), '');
+  chip()?.props?.onMouseEnter?.();
+  await dock.settle(3);
+  check('悬停「已截断」时直接展开设置路径',
+    /设置 → 提示词联想 → 高级/.test(textOf(dock.tree)), textOf(dock.tree).slice(-80));
+  chip()?.props?.onMouseLeave?.();
+  await dock.settle(3);
+  check('移出后恢复短文案', !/设置 → 提示词联想 → 高级/.test(textOf(dock.tree)), '');
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
+// 「试一下」的耗时单位也要跟界面语言一致（不能写死 ms）
+{
+  check('试一下结果显示本地化的耗时单位', /毫秒/.test(textOf(settings.tree)) || /\bms\b/.test(textOf(settings.tree)), '');
+}
+
+// 失败计数是全局的：两个 composer 各失败一次，也要能触发提示（只在最近失败的会话里显示）
+{
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  fetchResult = { ok: false, reason: '模型调用超时' };
+  const makeDock = (id) => mount(inst.react, C, () => ({
+    sessionId: id,
+    useSession: (sel) => sel({ running: false, blank: false, removed: false, title: id }),
+    useInput: (sel) => sel({}),
+    inputActions: { captureInsertion: () => ({}), insertText: () => true },
+  }));
+  const dockA = makeDock('session-a'); await dockA.settle();
+  const dockB = makeDock('session-b'); await dockB.settle();
+  const hasHint = (view) => find(view.tree, (n) => n.props && n.props['data-prompt-predict-hint'] === 'true').length > 0;
+  check('两个会话各失败一次也会触发提示（计数共享）',
+    !hasHint(dockA) && hasHint(dockB), `A=${hasHint(dockA)} B=${hasHint(dockB)}`);
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
+// 深色主题：切到 dark 后 ghost 与设置页要换成深色调色板
+{
+  const inst = setup();
+  inst.env.window.setDark(true);   // 在挂载前切换，模拟系统深色模式
+  const dock = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dock.settle();
+  const ghost = find(dock.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true')[0];
+  const span = find(ghost, (n) => n.props?.children === '先补测试再实现')[0];
+  check('深色模式下 ghost 的兜底色变深', String(span?.props?.style?.color || '').includes('#9ca3af'),
+    String(span?.props?.style?.color));
+
+  const settingsView = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await settingsView.settle();
+  const card = find(settingsView.tree, (n) => n.props && n.props.style && String(n.props.style.background || '').includes('--dsw-alias-bg-layer-1'))[0];
+  check('深色模式下设置卡片兜底背景为深色', String(card?.props?.style?.background || '').includes('#111827'),
+    String(card?.props?.style?.background));
+  check('卡片声明 color-scheme，让原生控件跟随深浅',
+    card?.props?.style?.colorScheme === 'dark', String(card?.props?.style?.colorScheme));
+  inst.env.window.setDark(false);
+}
+
+// 暂停 10 分钟：暂停期间不发预测，恢复后重新武装并预测一次
+{
+  const inst = setup();
+  const fetchCalls = [];
+  const origFetch = inst.env.window.fetch;
+  // 统计真实请求次数：暂停时必须是 0
+  const settingsView = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await settingsView.settle();
+  const pauseBtn = () => find(settingsView.tree, (n) => n.props && n.props['data-prompt-predict-pause'] === 'true')[0];
+  check('设置页有暂停开关', Boolean(pauseBtn()) && /暂停 10 分钟/.test(textOf(settingsView.tree)),
+    String(pauseBtn()?.props?.children));
+
+  pauseBtn()?.props?.onClick?.();
+  await settingsView.settle(3);
+  check('暂停后显示剩余时间', /已暂停，剩余/.test(textOf(settingsView.tree)), textOf(settingsView.tree).slice(-60));
+
+  // 暂停期间挂 dock：不应该有 ghost（不发预测）
+  const dock = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dock.settle();
+  check('暂停期间不显示 ghost', !hasGhost(dock.tree), '');
+
+  // 恢复：dock 收到事件后重新预测
+  pauseBtn()?.props?.onClick?.();
+  await settingsView.settle(3);
+  await dock.settle(4);
+  check('恢复后重新出现 ghost', hasGhost(dock.tree), '');
+}
+
+// 修复 5：连续失败时在 composer 里给一行提示（以前是彻底静默）
+{
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  let running = false;
+  fetchResult = { ok: false, reason: '模型调用超时' };
+  const view = mount(inst.react, C, () => ({
+    sessionId: 'session-fail',
+    useSession: (sel) => sel({ running, blank: false, removed: false, title: '失败会话' }),
+    useInput: (sel) => sel({}),
+    inputActions: { captureInsertion: () => ({}), insertText: () => true },
+  }));
+  await view.settle();
+  const hasHint = () => find(view.tree, (n) => n.props && n.props['data-prompt-predict-hint'] === 'true').length > 0;
+  check('一次失败不提示（避免偶发超时刷屏）', !hasHint(), '');
+  // 再触发一轮：running 由 true 回到 false 会重新预测
+  running = true; view.render(); await view.settle(3);
+  running = false; view.render(); await view.settle(3);
+  check('连续两次失败后出现提示', hasHint() && /模型调用超时/.test(textOf(view.tree)), textOf(view.tree).slice(-60));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+  running = true; view.render(); await view.settle(3);
+  running = false; view.render(); await view.settle(3);
+  check('恢复成功后提示消失', !hasHint(), '');
+}
+
+// 历史记录：清空 + 复制
+{
+  const seeds = [
+    { at: Date.now(), sessionId: 'session-clear', session: '清空会话', ms: 12, provider: 'p', model: 'm', suggestion: '这条会被复制' },
+    { at: Date.now() - 60000, sessionId: 'session-clear', session: '清空会话', ms: 20, provider: 'p', model: 'm', suggestion: '第二条' },
+  ];
+  const inst = setup();
+  inst.env.localStorage.setItem('dsh-prompt-predict.history', JSON.stringify(seeds));
+  const C = inst.registered['settings.section'].Component;
+  const view = mount(inst.react, C, () => ({}));
+  await view.settle();
+  const text = () => textOf(view.tree);
+  check('历史里有两条记录', /（2\/10）|[（(]2\/10[）)]/.test(text()), text().slice(-80));
+
+  const copyBtn = find(view.tree, (n) => n.props && n.props['data-prompt-predict-history-copy'] === 'true')[0];
+  copyBtn?.props?.onClick?.();
+  await view.settle(3);
+  // 注意：沙箱把 setTimeout 压成 0ms，"已复制" 文案会立刻复位，所以只断言剪贴板内容
+  check('点「复制」把建议原文写进剪贴板', inst.env.clipboard.text === '这条会被复制',
+    `clipboard=${JSON.stringify(inst.env.clipboard.text)}`);
+
+  const clearBtn = find(view.tree, (n) => n.props && n.props['data-prompt-predict-history-clear'] === 'true')[0];
+  clearBtn?.props?.onClick?.();
+  await Promise.resolve();   // 沙箱把 setTimeout 压成 0ms，撤销入口随即消失，只能在这一拍内断言
+  const undoBtn = find(view.tree, (n) => n.props && n.props['data-prompt-predict-history-undo'] === 'true')[0];
+  check('清空后提供「撤销」入口', Boolean(undoBtn) && /已清空/.test(text()), text().slice(-70));
+  const stored = inst.env.localStorage.getItem('dsh-prompt-predict.history');
+  check('点「清空」后列表与本地存储都为空', /还没有记录/.test(text()) && (!stored || stored === '[]'),
+    `stored=${stored}`);
+  undoBtn?.props?.onClick?.();
+  await view.settle(3);
+  const restored = inst.env.localStorage.getItem('dsh-prompt-predict.history');
+  check('点「撤销」恢复记录',
+    /（2\/10）|[（(]2\/10[）)]/.test(text()) && String(restored || '').includes('这条会被复制'),
+    `stored=${String(restored).slice(0, 40)}`);
+}
+
+// 「试一下」按钮：直接打 /suggest，把返回的建议显示出来（验证设置是否真的生效）
+{
+  const inst2 = setup(makeLocale('zh'));
+  // 先挂 composer dock：设置页要靠它拿到 liveSessionId 才能发起「试一下」
+  const dock2 = mount(inst2.react, inst2.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dock2.settle();
+  const C2 = inst2.registered['settings.section'].Component;
+  const view2 = mount(inst2.react, C2, () => ({}));
+  await view2.settle();
+  const btn = find(view2.tree, (n) => n.props && n.props['data-prompt-predict-try'] === 'true')[0];
+  check('设置页显示插件版本', /v9\.9\.9/.test(textOf(view2.tree)), textOf(view2.tree).slice(0, 60));
+check('设置页有「试一下」按钮', Boolean(btn), btn ? 'ok' : 'missing');
+  btn?.props?.onClick?.();
+  await view2.settle(12);
+  check('点「试一下」后显示示例建议', /示例建议/.test(textOf(view2.tree)), textOf(view2.tree).slice(-110));
+}
+
+// 主区域直接可见：建议语言 / 字数上限不再藏在「高级」里
+{
+  const inst3 = setup();
+  const C3 = inst3.registered['settings.section'].Component;
+  const view3 = mount(inst3.react, C3, () => ({}));
+  await view3.settle();
+  const text = textOf(view3.tree);
+  const langSelect = find(view3.tree, (n) => n.type === 'select' && (n.props?.children || []).some((c) => c?.props?.value === 'auto'))[0];
+  check('未展开「高级」时也能看到建议语言与字数上限',
+    Boolean(langSelect) && /字数上限/.test(text), text.slice(0, 60));
 }
 
 // 两层折叠：① 列表默认只显示第一条（点 ▸ 展开全部）② 第一条详情默认展开，点别条时前一条收起
@@ -509,9 +778,9 @@ fetchResult = { suggestion: '刷新后验证了三点都正常，但展开全', 
 const cutDock = mount(react, dockComponent, () => makeProps(''));
 await cutDock.settle();
 check('被截断的建议在 ghost 上标出「已截断」并提示调高上限',
-  cutDock.tree && /已截断/.test(textOf(cutDock.tree)) && /调高/.test(textOf(cutDock.tree)) && /max tokens/.test(textOf(cutDock.tree)),
+  cutDock.tree && /已截断/.test(textOf(cutDock.tree)) && /调高/.test(textOf(cutDock.tree)) && /字数上限/.test(textOf(cutDock.tree)),
   cutDock.tree ? textOf(cutDock.tree).slice(0, 100) : 'no tree');
-fetchResult = { suggestion: '先补测试再实现' };
+fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 
 check('再点同一条收起原文',
     !/第二条建议原文/.test(text()) && !/这是被截断的半句/.test(text()),
@@ -584,6 +853,64 @@ for (const [lang, expect] of [
   check('词典以命名空间注册进了 locale 服务',
     Boolean(dict) && dict.zh && dict.en && Object.keys(dict.en).length > 60,
     dict ? `zh=${Object.keys(dict.zh).length} en=${Object.keys(dict.en).length}` : 'not registered');
+}
+
+// 无障碍：灰字对比度要够、按钮点击区域不能太小
+{
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  const view = mount(inst.react, C, () => makeProps(''));
+  await view.settle();
+  const ghost = find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true')[0];
+  const spans = find(ghost, (n) => typeof n.props?.children === 'string');
+  const ghostText = spans.find((n) => n.props.children === '先补测试再实现');
+  // #6b7280 在白底上约 4.8:1，达到 WCAG AA；旧的 #9aa3b2 只有约 2.9:1
+  // 颜色现在是「DSH 设计令牌 + 本地兜底」，兜底值保证 AA 对比度
+  check('ghost 正文走宿主令牌且有 AA 兜底色',
+    String(ghostText?.props?.style?.color || '').startsWith('var(--dsw-alias-label-tertiary')
+    && String(ghostText?.props?.style?.color).includes('#6b7280'),
+    String(ghostText?.props?.style?.color));
+  const tabBtn = find(ghost, (n) => n.type === 'button' && n.props?.children === 'Tab')[0];
+  check('操作按钮点击区域 ≥ 24px', tabBtn?.props?.style?.height >= 24 && tabBtn?.props?.style?.fontSize >= 11,
+    `height=${tabBtn?.props?.style?.height} fontSize=${tabBtn?.props?.style?.fontSize}`);
+}
+
+// 修复 1：粘贴 / 输入法 / 拖拽 也要让 ghost 消失（只监听 keydown 会漏）
+{
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  const view = mount(inst.react, C, () => makeProps(''));
+  await view.settle();
+  check('输入法合成开始时隐藏 ghost（rc.2 下 keydown 是 Process，会漏）', (() => {
+    const before = hasGhost(view.tree);
+    inst.env.editor.emit('compositionstart');
+    return before && !hasGhost(view.tree);
+  })());
+}
+
+{
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  const view = mount(inst.react, C, () => makeProps(''));
+  await view.settle();
+  const before = hasGhost(view.tree);
+  inst.env.editor.emit('paste');
+  check('粘贴时隐藏 ghost（Cmd+V 的 keydown 带 metaKey，会漏）', before && !hasGhost(view.tree));
+}
+
+// 修复 2：编辑器里已有草稿时不预测、不显示（rc.2 拿不到 draft，只能读 DOM）
+{
+  let fetches = 0;
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  inst.env.editor.textContent = '我已经写了一半';
+  const view = mount(inst.react, C, () => makeProps(''));
+  await view.settle();
+  check('编辑器已有草稿时不显示 ghost', !hasGhost(view.tree), JSON.stringify(textOf(view.tree).slice(0, 40)));
+  inst.env.editor.textContent = '';
+  inst.env.editor.emit('input');      // 模拟用户把草稿删空（DOM 变化不会触发 React 重渲染）
+  await view.settle();
+  check('草稿清空后 ghost 恢复', hasGhost(view.tree), '');
 }
 
 // 两向验收：① 空输入框显示建议 ② 按键后立即隐藏（不依赖 draft，rc.2 拿不到）
