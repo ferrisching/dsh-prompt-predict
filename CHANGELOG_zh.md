@@ -5,6 +5,48 @@
 
 [English](CHANGELOG.md)
 
+## [0.2.8] — 2026-10-24
+
+### 新增
+
+- **客户端接入 NDJSON 流。** composer 请求 `stream: true`，`delta` 到达即更新 ghost，`reset` 清空重来，`done` 收尾，`error` 记录失败；旧 Host 或不带可读 body 的响应自动回退到原来的单个 JSON。reroll 也走同一条流。
+
+- **Host 的 NDJSON 流式响应。** `POST /dsh-prompt-predict/suggest` 带 `stream: true` 时返回 `application/x-ndjson` 事件（`start`、`delta`、`reset`、`done`、`error`）；不带 `stream` 时保持原来的单个 JSON 响应。`predictNextPrompt` 新增 `onDelta` 回调；重试前会先发 `reset` 再流式发送新结果。
+
+### 变更
+
+- **兼容性已在 DSH `0.2.1-rc.3` 上验证**（本机桌面版与当前 nightly 源均为 rc.3），不再只写 rc.2。
+- **历史行改成真正的 `<button>`**，复制按钮作为兄弟节点，不再用 `role=button` 容器，键盘和读屏语义更干净。
+- **Host 的 NDJSON delta 每 40ms 合并一次**，并在 `reset`/`done`/`error` 前强制 flush；快速模型不再逐 token 发一行。
+- **客户端源码拆分到 `client/src/` 片段**，由 `npm run build:client` 拼接成单个 `client/client.js`（`pretest` / `prepack` 自动执行）。生成物逐字节一致，行为不变。
+
+### 新增
+
+- **无障碍补齐**：reroll/截断标记有可访问名称；设置页所有下拉与数字输入都有 `aria-label`；暂停按钮暴露 `aria-pressed`，高级折叠暴露 `aria-expanded`；历史记录行改为可用键盘操作、带 `aria-expanded` 的按钮。
+
+- **可选的真实 DSH 冒烟测试**（`npm run test:smoke`）：临时 profile + 本地 mock LLM + 无头 Edge/CDP，覆盖 ghost 出现、焦点隔离、reroll、暂停。
+
+### 修复
+
+- **流式请求同时保留取消与超时。** 客户端仍响应 composer 的 AbortSignal，并额外保留 60 秒自身超时；流式 `error` 会收回半句 ghost，并在错误事件和失败历史里报告 `partialChars`（按 code point 计数，仅在大于 0 时显示）。
+- **建议记忆有上限，近重复会被过滤。** Host 每个会话的上一条建议放进 100 条上限的 LRU，长期开很多会话
+  也不会无限增长。去重现在忽略大小写、空白、成对引号和句末标点；长度至少 8 个字符且编辑距离不超过 2
+  的结果会被视为同一条，触发换一条而不是把改了个说法的复读再显示一遍。
+- **提供商目录失败可见且有超时/缓存。** 每个 provider 单独 3 秒超时并缓存（成功 60 秒、失败 15 秒）；
+  失败的 provider 仍会列出并显示原因、选项禁用，设置页不再只显示一个空模型下拉。
+- **历史条数修改立即生效。** 加载或保存更小的条数时，立刻裁剪本地存储并广播裁剪后的列表，不再等下一次预测。
+- **撤销清空不再丢掉新预测。** 清空前的快照会与清空后新产生的记录合并，按稳定记录 id 去重（旧记录用内容兜底），
+  再按时间倒序恢复。
+- **思考档位校验改为跟随模型实际能力。** 只要 `resolveModelInfo` 返回支持，`minimal`、`medium` 等档位
+  都可以保存，不再被写死的 `off/low/high/max` 白名单误拒；模型不提供思考档位时仍可显式选择 `off`，
+  不支持的档位依然会被拒绝。
+- **暂停状态与当前会话 id 现在可跨独立客户端模块实例共享。** 暂停截止时间和「试一下」使用的会话
+  都通过本地存储共享，不再只放在模块变量里；暂停时也会中止正在进行的预测，而不只是隐藏结果。
+- **快捷键只在当前 composer 聚焦时生效。** 在设置页或其它输入框中，`Tab`、`Alt+→`、`Esc` 不再被
+  插件拦截，正常的焦点移动和输入行为不受影响。
+- **换一条后会同步完整的建议状态。** 截断标记跟随新结果更新；失败计数也与普通预测一致，成功清零、
+  失败累加。
+
 ## [0.2.7] — 2026-10-21
 
 ### 修复

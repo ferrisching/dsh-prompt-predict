@@ -1,12 +1,16 @@
 # dsh-prompt-predict
 
 <div align="center">
+  <img src="https://raw.githubusercontent.com/ferrisching/dsh-prompt-predict/main/docs/logo.png" width="120" height="120" alt="dsh-prompt-predict logo" />
+</div>
+
+<div align="center">
   <b>Codex-style composer predictions for DeepSeek Harness</b><br />
   After each reply, your next prompt is ghosted right into the composer — <b>Tab to accept</b>, <b>Esc to dismiss</b>, start typing and it's gone<br /><br />
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-prompt-predict" /></a>
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-prompt-predict" /></a>
   <a href="https://github.com/ferrisching/dsh-prompt-predict/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/ferrisching/dsh-prompt-predict" /></a>
-  <img alt="Verified on DSH 0.2.1-rc.2" src="https://img.shields.io/badge/DSH-0.2.1--rc.2-4d6bfe" />
+  <img alt="Verified on DSH 0.2.1-rc.3" src="https://img.shields.io/badge/DSH-0.2.1--rc.3-4d6bfe" />
   <img alt="Zero runtime dependencies" src="https://img.shields.io/badge/dependencies-zero%20runtime-41ba41" />
   <img alt="Host + client plugin" src="https://img.shields.io/badge/shape-host%20%2B%20client-8250df" />
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
@@ -59,7 +63,7 @@ The plugin is published on npm. Options are ordered by convenience.
 **Or the dsh CLI** — pin any published version with pnpm's `@version` syntax:
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.7
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.8
 ```
 
 Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build), then **restart DSH**.
@@ -79,8 +83,8 @@ tarball that is on npm (`shasum` matches the registry), which is handy for offli
 pinning an artifact you can verify:
 
 ```bash
-gh release download v0.2.7 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.7.tgz
+gh release download v0.2.8 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.8.tgz
 ```
 
 Same caveat as the CLI route above: add `"dsh-prompt-predict"` to `dsh.profile.bundles` yourself,
@@ -115,7 +119,7 @@ Then open that profile's `package.json` and add `"dsh-prompt-predict"` to the `d
 
 ### Requirements
 
-- Verified on **DSH `0.2.1-rc.2`** (web build; the desktop app runs the same host and client code)
+- Verified on **DSH `0.2.1-rc.3`** (web build; the desktop app runs the same host and client code)
 - `node` / `pnpm`: the install script prefers DSH's own runtime under `~/.dsh/dsh-runtimes/*/dependencies` and only falls back to `PATH`
 - macOS / Linux; Windows untested
 
@@ -127,7 +131,7 @@ Then open that profile's `package.json` and add `"dsh-prompt-predict"` to the `d
 
 | Action | Effect |
 |---|---|
-| `Tab` | Accept the whole thing (only now is it inserted, and it stays undoable) |
+| `Tab` | Accept the whole thing while the composer is focused (only now is it inserted, and it stays undoable) |
 | `Alt+→` | **Accept piece by piece** — a couple of characters at a time in CJK, one word in Latin; the rest keeps floating, stop whenever you like |
 | `↻` (button on the right) | **Reroll** — ask the model for a different suggestion |
 | `Esc` | Dismiss this one |
@@ -187,6 +191,15 @@ For model selection, `provider` / `model` set to `auto` means "follow the sessio
 
 - Injects into the `conversation.composer.dock` (lifecycle mount point next to the composer) and `settings.section` slots
 - The ghost text is an **overlay** — it is never written into the Lexical editor; only accepting goes through `inputActions.insertText`
+
+
+### Client source layout
+
+The client is built from ordered fragments in `client/src/` (`npm run build:client` writes `client/client.js`). DSH loads exactly one client script, so the split is a source-organisation aid, not native ES modules; `pretest` and `prepack` rebuild automatically.
+
+### Real-DSH smoke test (macOS, optional)
+
+`npm run test:smoke` boots a disposable DSH profile, installs this repo as a local tarball, starts a local mock LLM and drives a headless Edge via CDP. It checks that: a real reply produces a ghost, `Tab` is ignored while another input is focused, `Tab` accepts inside the composer, reroll changes the suggestion, and pause hides/restores it. Requires the DeepSeek Harness app and Microsoft Edge; override paths with `DSH_SMOKE_DSH` and `DSH_SMOKE_EDGE`. It is deliberately not part of `npm test`.
 
 ## 🛠️ Development
 
@@ -274,7 +287,7 @@ The tests need no DSH runtime: a fake ctx plus a local HTTP server cover route r
 
 ## ⚠️ Known limitations
 
-- Verified only on DSH `0.2.1-rc.2`; other versions untested
+- Verified only on DSH `0.2.1-rc.3`; other versions untested
 - Depends on the host's `conversation.composer.dock` and `settings.section` slot names — a major DSH update may require adapting
 - Predictions consume quota on the selected model; pinning a fast small model is cheaper than following a reasoning model
 

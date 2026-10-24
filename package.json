@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-predict",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "输入框提示词联想插件：助手回复结束后预测你的下一句话，以灰色 ghost text 浮在输入框里，Tab 采纳、Esc 忽略 ｜ Codex-style composer prompt predictions for DeepSeek Harness: your next message ghosted into the composer, accepted with Tab.",
   "type": "module",
   "main": "lib/index.js",
@@ -13,7 +13,7 @@
   },
   "files": [
     "lib",
-    "client",
+    "client/client.js",
     "cordis.patch.yml",
     "README.md",
     "README_zh.md",
@@ -22,6 +22,10 @@
   ],
   "scripts": {
     "test": "node test/predict.mjs && node test/client-render.mjs",
+    "test:smoke": "node test/dsh-smoke.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "pretest": "node scripts/build-client.mjs",
+    "prepack": "node scripts/build-client.mjs",
     "pack": "pnpm pack"
   },
   "repository": {

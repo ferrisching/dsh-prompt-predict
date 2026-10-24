@@ -141,15 +141,29 @@ const textOf = (tree) => find(tree, () => true)
 // ---------------- 浏览器环境替身 ----------------
 function makeEnv() {
   const editorListeners = new Map();
+  const addListener = (map, type, fn) => {
+    if (!map.has(type)) map.set(type, new Set());
+    map.get(type).add(fn);
+  };
+  const removeListener = (map, type, fn) => {
+    const set = map.get(type);
+    if (!set) return;
+    set.delete(fn);
+    if (!set.size) map.delete(type);
+  };
+  const emitListeners = (map, type, event) => {
+    for (const fn of [...(map.get(type) || [])]) fn(event);
+  };
   const editor = {
     getBoundingClientRect: () => ({ left: 100, top: 200, width: 400, height: 40 }),
     parentElement: { querySelector: () => null },
-    focus() {},
+    contains: (node) => node === editor,
+    focus() { document.activeElement = editor; },
     innerText: '',
     textContent: '',
-    addEventListener: (type, fn) => { editorListeners.set(type, fn); },
-    removeEventListener: (type) => { editorListeners.delete(type); },
-    emit: (type) => { const fn = editorListeners.get(type); if (fn) fn({ type }); },
+    addEventListener: (type, fn) => addListener(editorListeners, type, fn),
+    removeEventListener: (type, fn) => removeListener(editorListeners, type, fn),
+    emit: (type, extra = {}) => emitListeners(editorListeners, type, { type, ...extra }),
   };
   const listeners = new Map();
   let dark = false;
@@ -161,9 +175,9 @@ function makeEnv() {
       addListener: (fn) => mediaListeners.add(fn),
     }),
     setDark(value) { dark = value; mediaListeners.forEach((fn) => fn({ matches: value })); },
-    addEventListener: (type, fn) => { listeners.set(type, fn); },
-    removeEventListener: (type) => { listeners.delete(type); },
-    dispatchEvent: (event) => { const fn = listeners.get(event.type); if (fn) fn(event); return true; },
+    addEventListener: (type, fn) => addListener(listeners, type, fn),
+    removeEventListener: (type, fn) => removeListener(listeners, type, fn),
+    dispatchEvent: (event) => { emitListeners(listeners, event.type, event); return true; },
     location: { href: 'http://127.0.0.1/', pathname: '/' },
   };
   // localStorage 替身：插件把「最近预测」存在这里（两个模块实例共享同一份）
@@ -177,19 +191,21 @@ function makeEnv() {
   const clipboard = { text: null, writeText(t) { this.text = t; return Promise.resolve(); } };
   const document = {
     body: { appendChild() {}, removeChild() {} },
+    activeElement: editor,
     execCommand: () => true,
     querySelector: (sel) => (String(sel).includes('data-composer-input') ? editor : null),
     querySelectorAll: () => [],
     createElement: () => ({ style: {}, setAttribute() {}, appendChild() {} }),
   };
-  return { window: Object.assign(window, { localStorage }), document, editor, listeners, localStorage, clipboard };
+  return { window: Object.assign(window, { localStorage }), document, editor, listeners, localStorage, clipboard, fetchCalls: [] };
 }
 
 // ---------------- 加载 client.js ----------------
 let testUserAgent = 'node-test';
 let fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
-function loadClient(localeService) {
-  const env = makeEnv();
+let ndjsonLines = null;
+function loadClient(localeService, sharedEnv) {
+  const env = sharedEnv || makeEnv();
   let registration = null;
   const sandbox = {
     window: env.window,
@@ -207,11 +223,27 @@ function loadClient(localeService) {
       paddingLeft: '0px', paddingTop: '0px', fontFamily: 'sans', fontSize: '14px', lineHeight: '20px', fontWeight: '400',
     }),
     CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
+    TextDecoder, TextEncoder,
     AbortController,
-    fetch: async () => ({
-      ok: true,
-      json: async () => ({ ok: true, ms: 12, provider: 'provider-x', model: 'model-y', ...fetchResult }),
-    }),
+    fetch: async (url, options) => {
+      env.fetchCalls.push({ url: String(url), options });
+      if (ndjsonLines && String(url).includes('/suggest')) {
+        const chunks = ndjsonLines.map((line) => Buffer.from(`${line}\n`));
+        let idx = 0;
+        return {
+          headers: { get: () => 'application/x-ndjson; charset=utf-8' },
+          body: {
+            getReader: () => ({
+              read: async () => (idx < chunks.length ? { done: false, value: chunks[idx++] } : { done: true }),
+            }),
+          },
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ok: true, ms: 12, provider: 'provider-x', model: 'model-y', ...fetchResult }),
+      };
+    },
   };
   sandbox.globalThis = sandbox;
   sandbox.window.__ModuleLoader__ = { load: (mod) => { registration = mod; } };
@@ -240,8 +272,8 @@ function makeLocale(lang) {
 }
 
 /** 挂载插件：返回注册到的组件与注入的 ctx。 */
-function setup(localeService) {
-  const client = loadClient(localeService);
+function setup(localeService, sharedEnv) {
+  const client = loadClient(localeService, sharedEnv);
   const registered = {};
   client.exports.apply({
     slots: {
@@ -302,6 +334,44 @@ const dock = mount(react, dockComponent, () => makeProps(''));
 await dock.settle();
 check('dock 渲染不抛异常', Boolean(dock.tree), 'ok');
 check('空草稿时渲染出 ghost 节点', hasGhost(dock.tree), `tree.type=${dock.tree?.type ?? 'null'}`);
+
+// ①b NDJSON：delta 更新、reset 清空、done 收尾；请求体必须带 stream:true
+{
+  ndjsonLines = [
+    JSON.stringify({ type: 'start' }),
+    JSON.stringify({ type: 'delta', text: '半句建议' }),
+    JSON.stringify({ type: 'reset' }),
+    JSON.stringify({ type: 'delta', text: '流式完整建议' }),
+    JSON.stringify({ type: 'done', ok: true, suggestion: '流式完整建议', truncated: false, provider: 'p', model: 'm', ms: 5 }),
+  ];
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(6);
+  const call = inst.env.fetchCalls.filter((c) => c.url.includes('/suggest')).at(-1);
+  const body = call?.options?.body ? JSON.parse(call.options.body) : {};
+  check('dock 请求 NDJSON 流（stream:true）', body.stream === true, JSON.stringify(body));
+  check('dock 把 AbortSignal 传给流式 fetch', Boolean(call?.options?.signal) && typeof call.options.signal.aborted === 'boolean',
+    String(call?.options?.signal));
+  check('客户端消费 NDJSON：reset 后的 delta 成为最终 ghost',
+    /流式完整建议/.test(textOf(view.tree)) && !/半句建议/.test(textOf(view.tree)), textOf(view.tree).slice(-80));
+  ndjsonLines = null;
+}
+
+// ①c 流式 error 事件必须收回已经显示的半句 ghost
+{
+  ndjsonLines = [
+    JSON.stringify({ type: 'start' }),
+    JSON.stringify({ type: 'delta', text: '半句不该留下' }),
+    JSON.stringify({ type: 'error', ok: false, reason: '流中断', partialChars: 6 }),
+  ];
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(6);
+  check('流式 error 后不残留半句 ghost', !hasGhost(view.tree) && !/半句不该留下/.test(textOf(view.tree)), '');
+  const stored = JSON.parse(inst.env.localStorage.getItem('dsh-prompt-predict.history') || '[]');
+  check('流式 error 把 partialChars 写入失败历史', stored[0]?.partialChars === 6, JSON.stringify(stored[0]));
+  ndjsonLines = null;
+}
 
 // ② 草稿非空 → 隐藏
 const draftDock = mount(react, dockComponent, () => makeProps('我在打字'));
@@ -379,7 +449,7 @@ check('输出长度按字数设置（20–400），提示里不再要求换算 t
 
 // 建议语言：默认 auto，下拉里含固定语言选项（同在「高级」里）
 const langSelect = find(settings.tree, (n) => n.type === 'select'
-  && (n.props?.children || []).some((c) => c?.props?.value === 'ru'))[0];
+  && Array.isArray(n.props?.children) && n.props.children.some((c) => c?.props?.value === 'ru'))[0];
 const langValues = (langSelect?.props?.children || []).map((c) => c?.props?.value);
 // 兜底候选必须与 Host 的清单一致，否则旧 Host / 请求失败时「更多语言…」会空着
 {
@@ -657,6 +727,129 @@ check('设置页列出最近预测（含会话标题）',
   check('恢复后重新出现 ghost', hasGhost(dock.tree), '');
 }
 
+// P0：dock 与 settings 是两个独立模块实例，但共享同一个 window/localStorage。
+// 暂停状态和 liveSessionId 都必须跨实例工作，不能只靠模块变量。
+{
+  const shared = makeEnv();
+  const dockInst = setup(null, shared);
+  const settingsInst = setup(null, shared);
+  let running = false;
+  const dockView = mount(dockInst.react, dockInst.registered['conversation.composer.dock'].Component, () => ({
+    ...makeProps(''),
+    useSession: (sel) => sel({ running, blank: false, removed: false, title: '跨实例会话' }),
+  }));
+  await dockView.settle();
+  const suggestCount = () => shared.fetchCalls.filter((c) => c.url.includes('/suggest')).length;
+  check('独立实例的 dock 能正常预测', hasGhost(dockView.tree), '');
+
+  const settingsView = mount(settingsInst.react, settingsInst.registered['settings.section'].Component, () => ({}));
+  await settingsView.settle();
+  const pauseButton = () => find(settingsView.tree, (n) => n.props && n.props['data-prompt-predict-pause'] === 'true')[0];
+  pauseButton()?.props?.onClick?.();
+  await settingsView.settle(3);
+  await dockView.settle(2);
+  check('另一个实例暂停后 dock 收起 ghost', !hasGhost(dockView.tree), '');
+
+  const before = suggestCount();
+  running = true; dockView.render(); await dockView.settle(2);
+  running = false; dockView.render(); await dockView.settle(3);
+  check('另一个实例暂停时不会重新发预测', suggestCount() === before,
+    `before=${before} after=${suggestCount()}`);
+
+  pauseButton()?.props?.onClick?.();
+  await settingsView.settle(3);
+  await dockView.settle(4);
+  check('另一个实例恢复后 dock 重新预测', hasGhost(dockView.tree), '');
+}
+
+// P0：localStorage 被禁用时，暂停仍要在本实例内生效（不能读回空值把内存状态冲掉）
+{
+  const inst = setup();
+  for (const method of ['getItem', 'setItem', 'removeItem']) {
+    inst.env.localStorage[method] = () => { throw new Error('storage blocked'); };
+  }
+  let running = false;
+  const dockView = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => ({
+    ...makeProps(''),
+    useSession: (sel) => sel({ running, blank: false, removed: false, title: '隐私模式' }),
+  }));
+  await dockView.settle();
+  const settingsView = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await settingsView.settle();
+  const before = inst.env.fetchCalls.filter((c) => c.url.includes('/suggest')).length;
+  find(settingsView.tree, (n) => n.props && n.props['data-prompt-predict-pause'] === 'true')[0]?.props?.onClick?.();
+  await settingsView.settle(3);
+  running = true; dockView.render(); await dockView.settle(2);
+  running = false; dockView.render(); await dockView.settle(3);
+  const after = inst.env.fetchCalls.filter((c) => c.url.includes('/suggest')).length;
+  check('localStorage 不可用时内存暂停仍生效', !hasGhost(dockView.tree) && after === before,
+    `before=${before} after=${after} ghost=${hasGhost(dockView.tree)}`);
+}
+
+// P0：「试一下」在独立 settings 实例里也要拿到 dock 写入的会话 id
+{
+  const shared = makeEnv();
+  const dockInst = setup(null, shared);
+  const settingsInst = setup(null, shared);
+  const dockView = mount(dockInst.react, dockInst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dockView.settle();
+  const settingsView = mount(settingsInst.react, settingsInst.registered['settings.section'].Component, () => ({}));
+  await settingsView.settle();
+  const tryButton = find(settingsView.tree, (n) => n.props && n.props['data-prompt-predict-try'] === 'true')[0];
+  tryButton?.props?.onClick?.();
+  await settingsView.settle(5);
+  const call = shared.fetchCalls.filter((c) => c.url.includes('/suggest')).at(-1);
+  const body = call?.options?.body ? JSON.parse(call.options.body) : null;
+  check('独立 settings 实例能调用当前会话的「试一下」',
+    body?.sessionId === 'session-smoke' && /先补测试再实现/.test(textOf(settingsView.tree)),
+    JSON.stringify(body));
+}
+
+// P0：快捷键不能抢其它输入框的焦点行为
+{
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle();
+  let prevented = 0;
+  const keydown = () => inst.env.window.dispatchEvent({
+    type: 'keydown', key: 'Tab',
+    preventDefault() { prevented += 1; }, stopPropagation() {},
+  });
+  inst.env.document.activeElement = { tagName: 'INPUT', id: 'other-input' };
+  keydown();
+  await view.settle(2);
+  check('焦点在其它输入框时 Tab 不插入建议', hasGhost(view.tree) && prevented === 0,
+    `ghost=${hasGhost(view.tree)} prevented=${prevented}`);
+
+  inst.env.document.activeElement = inst.env.editor;
+  keydown();
+  await view.settle(2);
+  check('焦点在 composer 时 Tab 才采纳建议', !hasGhost(view.tree) && prevented === 1,
+    `ghost=${hasGhost(view.tree)} prevented=${prevented}`);
+}
+
+// P0：reroll 后要同步截断标记，不能沿用上一次建议的状态
+{
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  fetchResult = { suggestion: '这是被截断的半句', truncated: true };
+  const view = mount(inst.react, C, () => makeProps(''));
+  await view.settle();
+  check('reroll 前显示截断标记', /已截断/.test(textOf(view.tree)), '');
+  fetchResult = { suggestion: '换一条完整的新建议', truncated: false };
+  find(view.tree, (n) => n.type === 'button' && n.props?.children === '↻')[0]?.props?.onClick?.();
+  await view.settle(4);
+  check('reroll 换成完整建议后清除截断标记',
+    /换一条完整的新建议/.test(textOf(view.tree)) && !/已截断/.test(textOf(view.tree)),
+    textOf(view.tree).slice(-100));
+
+  fetchResult = { suggestion: '这次又被截断', truncated: true };
+  find(view.tree, (n) => n.type === 'button' && n.props?.children === '↻')[0]?.props?.onClick?.();
+  await view.settle(4);
+  check('reroll 换成截断建议后显示截断标记', /已截断/.test(textOf(view.tree)), '');
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
 // 修复 5：连续失败时在 composer 里给一行提示（以前是彻底静默）
 {
   const inst = setup();
@@ -695,6 +888,12 @@ check('设置页列出最近预测（含会话标题）',
   await view.settle();
   const text = () => textOf(view.tree);
   check('历史里有两条记录', /（2\/10）|[（(]2\/10[）)]/.test(text()), text().slice(-80));
+  const historyRow = find(view.tree, (n) => n.props && n.props['data-prompt-predict-history-row'] === 'true')[0];
+  const historyCopy = find(view.tree, (n) => n.props && n.props['data-prompt-predict-history-copy'] === 'true')[0];
+  check('历史行是独立按钮，复制按钮不在行按钮内部',
+    historyRow?.type === 'button' && !historyRow?.props?.role && find(historyRow, () => false).length === 0
+    && !find(historyRow, (n) => n === historyCopy).length,
+    `${historyRow?.type} role=${historyRow?.props?.role}`);
 
   const copyBtn = find(view.tree, (n) => n.props && n.props['data-prompt-predict-history-copy'] === 'true')[0];
   copyBtn?.props?.onClick?.();
@@ -717,6 +916,88 @@ check('设置页列出最近预测（含会话标题）',
   check('点「撤销」恢复记录',
     /（2\/10）|[（(]2\/10[）)]/.test(text()) && String(restored || '').includes('这条会被复制'),
     `stored=${String(restored).slice(0, 40)}`);
+}
+
+// P1：加载设置时立即按 historySize 裁剪，并把裁剪结果写回 localStorage
+{
+  const inst = setup();
+  const seeded = Array.from({ length: 5 }, (_, i) => ({
+    at: Date.now() - i * 1000, sessionId: 'session-trim', session: '裁剪会话',
+    provider: 'p', model: 'm', suggestion: `第 ${i + 1} 条`,
+  }));
+  inst.env.localStorage.setItem('dsh-prompt-predict.history', JSON.stringify(seeded));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9', effective: { historySize: 2 } };
+  const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await view.settle(4);
+  const stored = JSON.parse(inst.env.localStorage.getItem('dsh-prompt-predict.history'));
+  check('加载设置时立即裁剪并落盘', stored.length === 2 && /（2\/2）/.test(textOf(view.tree)),
+    `stored=${stored.length} text=${textOf(view.tree).slice(-60)}`);
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
+// P1：保存更小的 historySize 时也要立即裁剪，而不是等下一次预测
+{
+  const inst = setup();
+  const seeded = Array.from({ length: 4 }, (_, i) => ({
+    at: Date.now() - i * 1000, sessionId: 'session-trim-save', session: '保存裁剪',
+    provider: 'p', model: 'm', suggestion: `保存前第 ${i + 1} 条`,
+  }));
+  inst.env.localStorage.setItem('dsh-prompt-predict.history', JSON.stringify(seeded));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9', effective: { historySize: 4 } };
+  const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await view.settle(4);
+  const sizeInput = find(view.tree, (n) => n.type === 'input' && n.props?.min === 1 && n.props?.max === 50)[0];
+  sizeInput?.props?.onChange?.({ target: { value: '2' } });
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9', effective: { historySize: 2 } };
+  find(view.tree, (n) => n.type === 'button' && n.props?.children === '保存')[0]?.props?.onClick?.();
+  await view.settle(5);
+  const stored = JSON.parse(inst.env.localStorage.getItem('dsh-prompt-predict.history'));
+  check('保存 historySize 时立即裁剪并落盘', stored.length === 2,
+    `stored=${stored.length}`);
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
+// P1：清空后有新预测时，撤销要合并去重，不能把新记录覆盖掉
+{
+  const inst = setup();
+  const old = [
+    { at: Date.now() - 5000, sessionId: 'session-undo', session: '撤销会话', provider: 'p', model: 'm', suggestion: '旧建议一' },
+    { at: Date.now() - 6000, sessionId: 'session-undo', session: '撤销会话', provider: 'p', model: 'm', suggestion: '旧建议二' },
+  ];
+  inst.env.localStorage.setItem('dsh-prompt-predict.history', JSON.stringify(old));
+  const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await view.settle();
+  find(view.tree, (n) => n.props && n.props['data-prompt-predict-history-clear'] === 'true')[0]?.props?.onClick?.();
+  await Promise.resolve();
+  const undoButton = find(view.tree, (n) => n.props && n.props['data-prompt-predict-history-undo'] === 'true')[0];
+  const fresh = { at: Date.now() + 1000, sessionId: 'session-undo', session: '撤销会话', provider: 'p', model: 'm', suggestion: '清空后的新建议' };
+  // 同时放入一条快照里已有的记录，验证撤销时不会重复
+  inst.env.localStorage.setItem('dsh-prompt-predict.history', JSON.stringify([fresh, old[0]]));
+  inst.env.window.dispatchEvent({ type: 'dsh-prompt-predict:run', detail: { latest: fresh, history: [fresh, old[0]] } });
+  undoButton?.props?.onClick?.();
+  await view.settle(3);
+  const restored = JSON.parse(inst.env.localStorage.getItem('dsh-prompt-predict.history'));
+  check('撤销与新记录合并且去重',
+    restored.length === 3 && restored[0].suggestion === '清空后的新建议'
+    && restored.some((r) => r.suggestion === '旧建议一') && restored.some((r) => r.suggestion === '旧建议二'),
+    JSON.stringify(restored.map((r) => r.suggestion)));
+}
+
+// 失败历史里的 partialChars：0 不显示「已收到 0 字」，正数才显示长度
+{
+  const mountWith = async (extra) => {
+    const inst = setup();
+    const seed = [{ at: Date.now(), sessionId: 'session-partial', session: '失败会话', error: '流中断', ...extra }];
+    inst.env.localStorage.setItem('dsh-prompt-predict.history', JSON.stringify(seed));
+    const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+    await view.settle(3);
+    return textOf(view.tree);
+  };
+  const zeroText = await mountWith({ partialChars: 0 });
+  check('partialChars=0 时不显示「已收到 0 字」',
+    /失败/.test(zeroText) && !/已收到 0 字/.test(zeroText), zeroText.slice(-100));
+  const sixText = await mountWith({ partialChars: 6 });
+  check('partialChars>0 时显示已收到字数', /已收到 6 字/.test(sixText), sixText.slice(-100));
 }
 
 // 「试一下」按钮：直接打 /suggest，把返回的建议显示出来（验证设置是否真的生效）
@@ -743,7 +1024,7 @@ check('设置页有「试一下」按钮', Boolean(btn), btn ? 'ok' : 'missing')
   const view3 = mount(inst3.react, C3, () => ({}));
   await view3.settle();
   const text = textOf(view3.tree);
-  const langSelect = find(view3.tree, (n) => n.type === 'select' && (n.props?.children || []).some((c) => c?.props?.value === 'auto'))[0];
+  const langSelect = find(view3.tree, (n) => n.type === 'select' && Array.isArray(n.props?.children) && n.props.children.some((c) => c?.props?.value === 'auto'))[0];
   check('未展开「高级」时也能看到建议语言与字数上限',
     Boolean(langSelect) && /字数上限/.test(text), text.slice(0, 60));
 }
@@ -831,6 +1112,49 @@ check('最近预测不再重复显示在状态行',
   view.render();
   await view.settle(2);
   check('删掉已采纳的前缀后重新显示完整建议（不能显示被截断的残句）', ghostText() === SUGGESTION, String(ghostText()));
+}
+
+// 无障碍：图标按钮、下拉和数字输入都要有可访问名称
+{
+  const inst = setup();
+  const dock = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dock.settle();
+  const reroll = find(dock.tree, (n) => n.type === 'button' && n.props?.children === '↻')[0];
+  check('ghost 的 reroll 按钮有 aria-label', Boolean(reroll?.props?.['aria-label']), String(reroll?.props?.['aria-label']));
+  const settingsView = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await settingsView.settle();
+  const advanced = find(settingsView.tree, (n) => n.type === 'button' && /高级/.test(String(n.props?.children)))[0];
+  advanced?.props?.onClick?.();
+  await settingsView.settle(2);
+  const labeled = find(settingsView.tree, (n) => (n.type === 'select' || n.type === 'input') && n.props?.['aria-label']);
+  check('设置页下拉/数字输入都有可访问名称', labeled.length >= 8, `labeled=${labeled.length}`);
+  const pause = find(settingsView.tree, (n) => n.props && n.props['data-prompt-predict-pause'] === 'true')[0];
+  check('暂停按钮暴露 aria-pressed', typeof pause?.props?.['aria-pressed'] === 'boolean', String(pause?.props?.['aria-pressed']));
+}
+
+// P1：提供商目录错误要在设置页可见，不可用 provider 的选项要禁用
+{
+  const inst = setup();
+  fetchResult = {
+    suggestion: '先补测试再实现', version: '9.9.9',
+    effective: { provider: 'provider-b', model: '', historySize: 10 },
+    groups: [
+      { id: 'provider-a', name: 'Provider A', models: [{ id: 'model-a', name: 'Model A' }] },
+      { id: 'provider-b', name: 'Provider B', models: [], error: 'catalog down' },
+    ],
+  };
+  const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await view.settle(4);
+  const text = textOf(view.tree);
+  const providerSelect = find(view.tree, (n) => n.type === 'select' && n.props?.value === 'provider-b')[0];
+  const brokenOption = find(providerSelect, (n) => n.type === 'option' && n.props?.value === 'provider-b')[0];
+  check('不可用 provider 的错误在设置页可见',
+    /该提供商不可用/.test(text) && /catalog down/.test(text), text.slice(-140));
+  check('不可用 provider 的选项被禁用且标记为不可用',
+    brokenOption?.props?.disabled === true && /不可用/.test(String(brokenOption?.props?.children)),
+    JSON.stringify(brokenOption?.props));
+  check('没有可用模型时给出明确提示', /没有可用模型/.test(text), text.slice(-100));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 }
 
 // ⑤ 双语：同一个组件，换语言后渲染出的文案必须跟着换

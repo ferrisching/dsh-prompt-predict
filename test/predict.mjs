@@ -39,9 +39,14 @@ check('清理建议包装', normalizeSuggestion('```text\n建议：继续完成�
 
 let captured;
 let streamCalls = [];
+const listModelsCalls = {};
 let failWhenEffort = false;
 let variant = 0;
 let finishKind = 'stop';   // 模拟 finish.reason.kind：'stop' | 'max-tokens'
+let customText = null;      // 覆盖单次主响应（测近重复去重/LRU）
+let customRetryText = null; // 覆盖去重重试的响应
+let multiChunkNext = false; // 下一次正文拆成两个 delta
+let failAfterDeltaCount = 0; // 先吐半句再抛错（次数）
 let truncateNext = false;  // 让下一次调用返回「被输出上限截断」的半句
 let emptyTruncateNext = false;  // 让下一次调用返回「空正文 + max-tokens」
 const fakeSession = {
@@ -67,12 +72,24 @@ const fakeCtx = {
         throw new Error('reasoning effort not supported by this model');
       }
       const prompt = options.messages?.[0]?.content?.[0]?.text ?? '';
+      if (failAfterDeltaCount > 0) {
+        failAfterDeltaCount -= 1;
+        yield { type: 'text-delta', text: '半句' };
+        throw new Error('mock mid-stream failure');
+      }
+      if (multiChunkNext) {
+        multiChunkNext = false;
+        yield { type: 'text-delta', text: '先补' };
+        yield { type: 'text-delta', text: '测试再实现' };
+        yield { type: 'finish', reason: { kind: 'stop' } };
+        return;
+      }
       // 带「必须换一条」提示（去重 / reroll）时换一条（两个变体轮换，模拟「换了个说法」），
       // 否则固定返回同一条 —— 用来制造「复读」以验证去重
-      let text = '"继续，直接实现并安装插件"';
+      let text = customText || '"继续，直接实现并安装插件"';
       if (/Give a DIFFERENT suggestion/.test(prompt)) {
         variant += 1;
-        text = variant % 2 ? '"换个思路：先补测试再实现"' : '"先把边界情况列个清单"';
+        text = customRetryText || (variant % 2 ? '"换个思路：先补测试再实现"' : '"先把边界情况列个清单"');
       }
       yield { type: 'block-start', block: { type: 'text' } };
       if (emptyTruncateNext) {
@@ -94,16 +111,19 @@ const fakeCtx = {
         { id: 'provider-a', name: 'Provider A' },
         { id: 'provider-effort', name: 'Provider Effort' },
         { id: 'broken', name: 'Broken' },
+        { id: 'slow', name: 'Slow' },
       ];
     },
     async listModels(provider) {
+      listModelsCalls[provider] = (listModelsCalls[provider] || 0) + 1;
+      if (provider === 'slow') return new Promise((resolve) => setTimeout(() => resolve([{ id: 'model-slow' }]), 500));
       if (provider === 'provider-a') return [{ id: 'model-a' }, { id: 'model-b' }];
       if (provider === 'provider-effort') return [{ id: 'model-r' }];
       if (provider === 'broken') throw new Error('provider unavailable');
       return [];
     },
     async resolveModelInfo(provider) {
-      if (provider === 'provider-effort') return { reasoning: { efforts: [{ id: 'off' }, { id: 'high' }] } };
+      if (provider === 'provider-effort') return { reasoning: { efforts: [{ id: 'off' }, { id: 'minimal' }, { id: 'medium' }, { id: 'high' }] } };
       return {};
     },
   },
@@ -133,6 +153,11 @@ check('系统提示明确点名语言', /in Russian/.test(buildSystem('Russian')
 
 const predicted = await predictNextPrompt(fakeCtx, fakeSession, { maxTokens: 48 });
 check('生成并归一化建议', predicted.suggestion === '继续，直接实现并安装插件', predicted.suggestion);
+const capturedBeforeDeltas = captured;
+let predictDeltas = [];
+await predictNextPrompt(fakeCtx, fakeSession, { onDelta: (text) => predictDeltas.push(text) });
+check('predictNextPrompt 逐段回调 onDelta', predictDeltas.length > 0 && predictDeltas.at(-1) === '继续，直接实现并安装插件', JSON.stringify(predictDeltas));
+captured = capturedBeforeDeltas;
 check('继承当前会话模型路由', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);
 check('限制输出 token', captured.maxTokens === 48, String(captured.maxTokens));
 // 中文会话：识别为 Chinese，system 与 framing 都不该是「因为提示词是中文」而让模型写中文
@@ -173,14 +198,20 @@ let route;
 let cleaned = false;
 const cleanups = [];
 const ctx = {
-  sessions: { get: (id) => (id === 'session-test' ? fakeSession : id === 'session-dedupe' ? fakeSession2 : id === 'session-widen' ? fakeSession3 : undefined) },
+  sessions: { get: (id) => {
+    if (id === 'session-test') return fakeSession;
+    if (id === 'session-dedupe') return fakeSession2;
+    if (id === 'session-widen') return fakeSession3;
+    if (id === 'session-near' || id === 'session-stream' || id === 'session-stream-retry' || id === 'session-stream-coalesce' || id === 'session-stream-error' || /^session-lru-\d+$/.test(id)) return { ...fakeSession, id };
+    return undefined;
+  } },
   llm: fakeCtx.llm,
   agentDefaultModel: fakeCtx.agentDefaultModel,
   connection: { requestRejection: () => undefined },
   webServer: { register: (value) => { route = value; return () => { cleaned = true; }; } },
   effect(fn) { const cleanup = fn(); if (typeof cleanup === 'function') cleanups.push(cleanup); },
 };
-apply(ctx, { timeoutMs: 3000 });
+apply(ctx, { timeoutMs: 3000, catalogTimeoutMs: 100 });
 check('注册 Host 前缀路由', route?.kind === 'prefix' && route.path === '/dsh-prompt-predict', `${route?.kind} ${route?.path}`);
 check('登记 effect 清理函数', cleanups.length === 1, String(cleanups.length));
 
@@ -202,6 +233,21 @@ function request(path, method = 'GET', body, extraHeaders = {}) {
     r.end();
   });
 }
+function requestRaw(path, method = 'GET', body) {
+  return new Promise((resolve, reject) => {
+    const payload = body === undefined ? null : JSON.stringify(body);
+    const headers = {};
+    if (payload) { headers['content-type'] = 'application/json'; headers['content-length'] = Buffer.byteLength(payload); }
+    const r = http.request({ host: '127.0.0.1', port, path, method, headers }, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }));
+    });
+    r.on('error', reject);
+    if (payload) r.write(payload);
+    r.end();
+  });
+}
 const status = await request('/dsh-prompt-predict/status');
 check('状态接口返回结构', status.status === 200
   && status.json.current?.model === 'model-default'
@@ -211,6 +257,44 @@ const suggestion = await request('/dsh-prompt-predict/suggest', 'POST', { sessio
 check('建议接口返回预测', suggestion.status === 200 && suggestion.json.suggestion === '继续，直接实现并安装插件', JSON.stringify(suggestion.json));
 check('建议响应带上会话标识', suggestion.json.sessionId === 'session-test', String(suggestion.json.sessionId));
 check('默认跟随当前会话模型', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);
+
+const ndjson = await requestRaw('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-stream', stream: true });
+const events = ndjson.body.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+const doneEvent = events.find((e) => e.type === 'done');
+const deltaEvent = events.find((e) => e.type === 'delta');
+check('NDJSON 流式返回 start/delta/done',
+  ndjson.status === 200
+  && ndjson.headers['content-type']?.includes('application/x-ndjson')
+  && events[0]?.type === 'start'
+  && Boolean(deltaEvent?.text)
+  && doneEvent?.ok === true && doneEvent.suggestion === '继续，直接实现并安装插件',
+  JSON.stringify(events));
+
+multiChunkNext = true;
+const coalesced = await requestRaw('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-stream-coalesce', stream: true });
+const coalescedEvents = coalesced.body.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+check('NDJSON 的多个 delta 按时间合并',
+  coalescedEvents.filter((e) => e.type === 'delta').length === 1
+  && coalescedEvents.find((e) => e.type === 'delta')?.text === '先补测试再实现',
+  JSON.stringify(coalescedEvents.map((e) => [e.type, e.text])));
+
+failAfterDeltaCount = 2;
+const streamError = await requestRaw('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-stream-error', stream: true });
+const streamErrorEvents = streamError.body.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+const errorEvent = streamErrorEvents.find((e) => e.type === 'error');
+check('NDJSON error 事件带已合并内容长度',
+  errorEvent?.partialChars === 2 && /mock mid-stream failure/.test(errorEvent.reason),
+  JSON.stringify(streamErrorEvents));
+
+truncateNext = true;
+const resetStreamResult = await requestRaw('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-stream-retry', stream: true });
+const resetEvents = resetStreamResult.body.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+check('NDJSON 在放宽重试前发送 reset，并最终 done',
+  resetEvents.some((e) => e.type === 'reset')
+  && resetEvents.filter((e) => e.type === 'done').length === 1
+  && resetEvents.find((e) => e.type === 'done')?.truncated === false,
+  JSON.stringify(resetEvents.map((e) => e.type)));
+truncateNext = false;
 // 输出上限截断时，路由要自动放宽上限重问一次，最终返回完整建议而不是半句
 const callsBeforeWiden = streamCalls.length;
 truncateNext = true;
@@ -229,6 +313,17 @@ check('缺 sessionId → 400', bad.status === 400, `${bad.status}`);
 const catalog = await request('/dsh-prompt-predict/catalog');
 check('模型目录接口返回分组', catalog.status === 200 && Array.isArray(catalog.json.groups)
   && catalog.json.groups.some((g) => g.id === 'provider-a' && g.models.length === 2), JSON.stringify((catalog.json.groups ?? []).map((g) => g.id)));
+const brokenGroup = catalog.json.groups.find((g) => g.id === 'broken');
+const slowGroup = catalog.json.groups.find((g) => g.id === 'slow');
+check('目录保留不可用 provider 的错误原因',
+  Boolean(brokenGroup?.error) && brokenGroup.models.length === 0, JSON.stringify(brokenGroup));
+check('目录查询超时被标记为该 provider 的错误',
+  Boolean(slowGroup?.error) && /超时|timed out/.test(slowGroup.error), String(slowGroup?.error));
+const callsBeforeCache = listModelsCalls['provider-a'] || 0;
+const catalogCached = await request('/dsh-prompt-predict/catalog');
+check('目录按 provider 缓存，第二次请求不重复查询',
+  listModelsCalls['provider-a'] === callsBeforeCache && Array.isArray(catalogCached.json.groups),
+  `calls=${callsBeforeCache}->${listModelsCalls['provider-a']}`);
 
 const switchModel = await request('/dsh-prompt-predict/settings', 'POST', { provider: 'provider-a', model: 'model-b' });
 check('切换模型并保存', switchModel.status === 200 && switchModel.json.ok === true
@@ -265,6 +360,17 @@ check('auto 路由继承当前会话模型', captured.provider === 'provider-cur
 
 const effortOnAuto = await request('/dsh-prompt-predict/settings', 'POST', { reasoningEffort: 'off' });
 check('跟随会话模型时不按固定模型拦思考深度', effortOnAuto.json.ok === true && effortOnAuto.json.effective.reasoningEffort === 'off', String(effortOnAuto.json.reason ?? effortOnAuto.json.effective?.reasoningEffort));
+
+// 档位校验必须跟随模型实际能力，而不是写死 off/low/high/max 的白名单
+const minimalEffort = await request('/dsh-prompt-predict/settings', 'POST', { provider: 'provider-effort', model: 'model-r', reasoningEffort: 'minimal' });
+check('模型支持 minimal 时允许保存', minimalEffort.json.ok === true && minimalEffort.json.effective.reasoningEffort === 'minimal', String(minimalEffort.json.reason ?? minimalEffort.json.effective?.reasoningEffort));
+const mediumEffort = await request('/dsh-prompt-predict/settings', 'POST', { provider: 'provider-effort', model: 'model-r', reasoningEffort: 'medium' });
+check('模型支持 medium 时允许保存', mediumEffort.json.ok === true && mediumEffort.json.effective.reasoningEffort === 'medium', String(mediumEffort.json.reason ?? mediumEffort.json.effective?.reasoningEffort));
+const offNoLevels = await request('/dsh-prompt-predict/settings', 'POST', { provider: 'provider-a', model: 'model-b', reasoningEffort: 'off' });
+check('模型没有思考档位时仍允许显式 off', offNoLevels.json.ok === true && offNoLevels.json.effective.reasoningEffort === 'off', String(offNoLevels.json.reason ?? offNoLevels.json.effective?.reasoningEffort));
+// 不污染后续用例：恢复跟随会话模型 + off
+await request('/dsh-prompt-predict/settings', 'POST', { provider: 'auto', model: 'auto' });
+await request('/dsh-prompt-predict/settings', 'POST', { reasoningEffort: 'off' });
 
 // 记录条数（客户端历史列表的上限）：默认 10，可调 1–50
 const historyDefault = await request('/dsh-prompt-predict/status');
@@ -405,6 +511,34 @@ check('连续同一条建议触发去重重试',
   JSON.stringify({ first: dedupeFirst.json.suggestion, second: dedupeSecond.json.suggestion, dedup: dedupeSecond.json.dedupRetry }));
 check('去重提示确实进入模型请求',
   streamCalls.some((c) => /Give a DIFFERENT suggestion/.test(c.messages?.[0]?.content?.[0]?.text ?? '')), '');
+
+// 近重复：只差句末标点/空白/大小写也要触发换一条，而不是把近似复读当新建议
+customText = '"先补测试再实现"';
+customRetryText = '"换个思路：先补测试再实现"';
+const nearFirst = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-near' });
+customText = '"先补测试再实现。"';
+streamCalls = [];
+const nearSecond = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-near' });
+check('句末标点不同的近重复也触发去重',
+  nearSecond.json.dedupRetry === true
+  && nearSecond.json.suggestion !== nearFirst.json.suggestion
+  && streamCalls.length === 2,
+  JSON.stringify({ first: nearFirst.json.suggestion, second: nearSecond.json.suggestion, calls: streamCalls.length }));
+
+// LRU：会话记忆有上限，最久未用的会话会被淘汰，最近使用的仍在
+customText = '"固定建议"';
+customRetryText = '"固定建议的变体"';
+for (let i = 1; i <= 101; i += 1) {
+  await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: `session-lru-${i}` });
+}
+streamCalls = [];
+await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-lru-1' });
+check('LRU 上限淘汰最久未用的会话记忆', streamCalls.length === 1, `calls=${streamCalls.length}`);
+streamCalls = [];
+await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-lru-101' });
+check('最近使用的会话仍在 LRU 中', streamCalls.length === 2, `calls=${streamCalls.length}`);
+customText = null;
+customRetryText = null;
 
 // reroll：用户点「换一条」时首轮就带 avoid，必须给出不同的
 streamCalls = [];
