@@ -1,12 +1,16 @@
 # dsh-prompt-predict
 
 <div align="center">
+  <img src="https://raw.githubusercontent.com/ferrisching/dsh-prompt-predict/main/docs/logo.png" width="120" height="120" alt="dsh-prompt-predict logo" />
+</div>
+
+<div align="center">
   <b>Codex 风格的输入框提示词联想</b><br />
   助手回复结束后，把你的下一句话以灰色 ghost text 直接写进输入框 —— <b>Tab 采纳</b>、<b>Esc 忽略</b>、开始输入自动消失<br /><br />
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-prompt-predict" /></a>
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-prompt-predict" /></a>
   <a href="https://github.com/ferrisching/dsh-prompt-predict/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/ferrisching/dsh-prompt-predict" /></a>
-  <img alt="已验证 DSH 0.2.1-rc.2" src="https://img.shields.io/badge/DSH-0.2.1--rc.2-4d6bfe" />
+  <img alt="已验证 DSH 0.2.1-rc.3" src="https://img.shields.io/badge/DSH-0.2.1--rc.3-4d6bfe" />
   <img alt="零运行时依赖" src="https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-%E9%9B%B6%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-41ba41" />
   <img alt="客户端 + Host 双端插件" src="https://img.shields.io/badge/%E5%BD%A2%E6%80%81-Host%20%2B%20%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%8F%92%E4%BB%B6-8250df" />
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
@@ -59,7 +63,7 @@
 **或者用 dsh CLI**——想装某个已发布版本就用 pnpm 的 `@版本` 语法：
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.7
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.8
 ```
 
 `--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`），**装完重启 DSH 生效**。
@@ -77,8 +81,8 @@ dsh plugin --profile desktop add dsh-prompt-predict@0.2.7
 **完全一致**的 tarball（`shasum` 与 registry 相同），适合离线机器或需要自行校验产物的场景：
 
 ```bash
-gh release download v0.2.7 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.7.tgz
+gh release download v0.2.8 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.8.tgz
 ```
 
 与上面 CLI 路径同样的注意点：请自己把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles`，
@@ -113,7 +117,7 @@ pnpm add /path/to/dsh-prompt-predict
 
 ### 安装要求
 
-- 已在 **DSH `0.2.1-rc.2`** 上验证（Web 构建；桌面端跑的是同一套 host 与 client 代码）
+- 已在 **DSH `0.2.1-rc.3`** 上验证（Web 构建；桌面端跑的是同一套 host 与 client 代码）
 - `node` / `pnpm`：安装脚本优先使用 `~/.dsh/dsh-runtimes/*/dependencies` 下 DSH 自带的运行时，找不到才回退 `PATH`
 - macOS / Linux；Windows 未验证
 
@@ -125,7 +129,7 @@ pnpm add /path/to/dsh-prompt-predict
 
 | 操作 | 效果 |
 |---|---|
-| `Tab` | 整条采纳（此刻才插入输入框，可撤销） |
+| `Tab` | 输入框聚焦时整条采纳（此刻才插入输入框，可撤销） |
 | `Alt+→` | **逐段采纳**：一次填一小段（中文 2 字、英文 1 词），剩下的继续浮动，随时可停 |
 | `↻`（点右侧按钮） | **换一条**：让模型给一条不同的建议 |
 | `Esc` | 忽略这条 |
@@ -185,6 +189,15 @@ pnpm add /path/to/dsh-prompt-predict
 
 - 注入 `conversation.composer.dock`（输入框旁的生命周期挂载点）与 `settings.section`（设置页分区）两个 slot
 - ghost text 是一层**覆盖层**，不写进 Lexical 编辑器；只有采纳时才通过 `inputActions.insertText` 真正插入
+
+
+### 客户端源码结构
+
+客户端由 `client/src/` 里按顺序排列的片段拼接而成（`npm run build:client` 生成 `client/client.js`）。DSH 只加载单个客户端脚本，所以拆分只是开发期的组织方式、不是原生 ES module；`pretest` 和 `prepack` 会自动重建。
+
+### 真实 DSH 冒烟（macOS，可选）
+
+`npm run test:smoke` 会创建临时 DSH profile、把本仓库打成 tgz 装进去、启动本地 mock LLM，并用无头 Edge 通过 CDP 驱动真实 composer。验证：真实回复后出现 ghost、焦点在其它输入框时 `Tab` 不采纳、composer 聚焦时 `Tab` 采纳、reroll 换成新建议、暂停隐藏并在恢复后重现。需要安装 DeepSeek Harness App 与 Microsoft Edge；可用 `DSH_SMOKE_DSH`、`DSH_SMOKE_EDGE` 覆盖路径。它不进入 `npm test`。
 
 ## 🛠️ 开发
 
@@ -272,7 +285,7 @@ npm test        # 71 项：51 项 Host 端 + 20 项客户端渲染冒烟
 
 ## ⚠️ 已知限制
 
-- 仅在 DSH `0.2.1-rc.2` 上验证过，其它版本未测
+- 仅在 DSH `0.2.1-rc.3` 上验证过，其它版本未测
 - 依赖宿主的 `conversation.composer.dock` 与 `settings.section` 两个 slot 名称，DSH 大版本调整后可能需要适配
 - 联想会消耗所选模型的额度；固定到快速小模型比跟随推理模型更省
 

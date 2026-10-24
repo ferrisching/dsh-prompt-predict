@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Prompt Predictions logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6E7BFF"/>
+      <stop offset="1" stop-color="#3B4FE6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="225" fill="url(#bg)"/>
+  <text x="697" y="522" font-family="Helvetica, 'Helvetica Neue', Arial, sans-serif" font-weight="700"
+        font-size="620" fill="#FFFFFF" fill-opacity="0.27" text-anchor="middle"
+        dominant-baseline="central">A</text>
+  <text x="512" y="522" font-family="Helvetica, 'Helvetica Neue', Arial, sans-serif" font-weight="700"
+        font-size="620" fill="#FFFFFF" text-anchor="middle"
+        dominant-baseline="central">A</text>
+  <polygon points="828.0,208.0 837.2,252.8 882.0,262.0 837.2,271.2 828.0,316.0 818.8,271.2 774.0,262.0 818.8,252.8" fill="#FFFFFF"/>
+  <polygon points="900.0,166.0 903.7,184.3 922.0,188.0 903.7,191.7 900.0,210.0 896.3,191.7 878.0,188.0 896.3,184.3" fill="#FFFFFF" fill-opacity="0.78"/>
+</svg>

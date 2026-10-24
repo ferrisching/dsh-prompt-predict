@@ -36,6 +36,11 @@ window.__ModuleLoader__.load({
         "settings.model": "模型",
         "settings.followSession": "跟随当前会话模型",
         "settings.modelHint": "默认跟随当前会话模型；也可固定到某个模型——选快模型更省额度。",
+        "settings.providerError": "该提供商不可用：{detail}",
+        "settings.providerUnavailableShort": "不可用",
+        "settings.catalogError": "提供商目录加载失败：{detail}",
+        "settings.catalogFailed": "提供商目录加载失败",
+        "settings.noModels": "没有可用模型",
         "settings.advanced": " 高级",
         "settings.timeout": "响应超时",
         "settings.timeoutUnit": "秒（1–60）",
@@ -86,6 +91,8 @@ window.__ModuleLoader__.load({
         "settings.truncatedWarn": "最近一次预测被长度限制截断了：把上面的「字数上限」调高一档（例如 200 字），点「保存」，再触发一次联想试试。",
         "run.session": "会话 {name}",
         "run.failedShort": "失败 — {reason}",
+        "run.partialChars": "已收到 {count} 字",
+        "run.partialCharsOne": "已收到 1 字",
         "settings.historyTitle": "最近预测（{count}/{limit}）",
         "settings.historyHint": "点一行可以展开当时的建议原文（只存在本机，不上传）",
         "settings.historyToggle": "展开 / 收起建议原文",
@@ -130,6 +137,11 @@ window.__ModuleLoader__.load({
         "settings.model": "Model",
         "settings.followSession": "Follow the current session model",
         "settings.modelHint": "Follows the current session model by default; pin a cheaper model to save quota.",
+        "settings.providerError": "This provider is unavailable: {detail}",
+        "settings.providerUnavailableShort": "unavailable",
+        "settings.catalogError": "Could not load the provider catalog: {detail}",
+        "settings.catalogFailed": "Could not load the provider catalog",
+        "settings.noModels": "No models available",
         "settings.advanced": " Advanced",
         "settings.timeout": "Response timeout",
         "settings.timeoutUnit": "seconds (1–60)",
@@ -180,6 +192,8 @@ window.__ModuleLoader__.load({
         "settings.truncatedWarn": "The latest prediction hit the length limit: raise Output length above (200 characters, say), click Save, then trigger a prediction again.",
         "run.session": "session {name}",
         "run.failedShort": "failed — {reason}",
+        "run.partialChars": "{count} chars received",
+        "run.partialCharsOne": "1 char received",
         "settings.historyTitle": "Recent predictions ({count}/{limit})",
         "settings.historyHint": "Click a row to expand the suggestion text (stored locally, never uploaded)",
         "settings.historyToggle": "Expand / collapse the suggestion text",
@@ -424,6 +438,7 @@ window.__ModuleLoader__.load({
         },
         histRowWrap: { borderBottom: "1px solid " + token("border-l1", c.rowBorder), padding: "2px 0" },
         histRow: { display: "flex", gap: 10, alignItems: "baseline", fontSize: 12.5, lineHeight: 1.9 },
+        histRowButton: { width: "100%", background: "none", border: 0, padding: 0, color: "inherit", font: "inherit", textAlign: "start", cursor: "pointer" },
         histCaret: { color: c.muted, flex: "none", width: 10, fontSize: 11 },
         histText: { display: "flex", gap: 8, alignItems: "flex-start", marginBlock: "2px 10px", marginInlineStart: 20, padding: "8px 10px", borderRadius: 8, background: token("bg-layer-2", c.softBg) },
         histTextBody: { flex: 1, whiteSpace: "pre-wrap", wordBreak: "break-word", color: token("label-primary", c.softText), fontSize: 12.5, lineHeight: 1.7 },
@@ -467,6 +482,71 @@ window.__ModuleLoader__.load({
         .finally(function () { clearTimeout(timer); });
     }
 
+    // 流式联想：优先读 NDJSON（start/delta/reset/done/error），旧 Host 或没有
+    // ReadableStream 时自动退回原来的单个 JSON 响应。
+    function apiStream(path, body, onEvent, externalSignal) {
+      // 外部（composer dock）传入的 signal 必须真正接到 fetch 上，否则切会话/暂停时
+      // 只是忽略了事件，请求还会继续跑到 60 秒。
+      // 外部 signal 负责「切会话/暂停/新预测」取消；这里仍保留自己的 60s 超时，
+      // 两者任一触发都 abort fetch。
+      var controller = new AbortController();
+      var onExternalAbort = function () { controller.abort(); };
+      if (externalSignal) {
+        if (externalSignal.aborted) controller.abort();
+        else if (typeof externalSignal.addEventListener === "function") externalSignal.addEventListener("abort", onExternalAbort);
+      }
+      var timer = setTimeout(function () { controller.abort(); }, 60000);
+      var langHeader = { "x-dsh-locale": currentLang() };
+      var opts = {
+        method: "POST",
+        headers: Object.assign({ "content-type": "application/json" }, langHeader),
+        body: JSON.stringify(Object.assign({}, body, { stream: true })),
+        signal: controller.signal,
+      };
+      var emit = function (event) { try { onEvent(event); } catch { /* 单个事件渲染失败不影响流 */ } };
+      return fetch("./dsh-prompt-predict/" + path, opts).then(function (r) {
+        var type = r && r.headers && typeof r.headers.get === "function" ? (r.headers.get("content-type") || "") : "";
+        if (r && r.body && typeof r.body.getReader === "function" && type.indexOf("application/x-ndjson") !== -1) {
+          var reader = r.body.getReader();
+          var decoder = new TextDecoder();
+          var buffer = "";
+          var final = null;
+          var pump = function () {
+            return reader.read().then(function (step) {
+              if (step.done) {
+                buffer += decoder.decode();
+                if (buffer.trim()) { try { var last = JSON.parse(buffer); final = last; emit(last); } catch { /* 忽略残行 */ } }
+                return final || { ok: false, reason: "stream ended" };
+              }
+              buffer += decoder.decode(step.value, { stream: true });
+              var idx;
+              while ((idx = buffer.indexOf("\n")) >= 0) {
+                var line = buffer.slice(0, idx).trim();
+                buffer = buffer.slice(idx + 1);
+                if (!line) continue;
+                try {
+                  var event = JSON.parse(line);
+                  if (event.type === "done" || event.type === "error") final = event;
+                  emit(event);
+                } catch { /* 忽略坏行 */ }
+              }
+              return pump();
+            });
+          };
+          return pump();
+        }
+        return r.json().then(function (result) {
+          emit(result && result.ok ? Object.assign({ type: "done" }, result) : Object.assign({ type: "error" }, result || {}));
+          return result;
+        });
+      }).finally(function () {
+        clearTimeout(timer);
+        if (externalSignal && typeof externalSignal.removeEventListener === "function") {
+          externalSignal.removeEventListener("abort", onExternalAbort);
+        }
+      });
+    }
+
     function notifySettings(effective) {
       window.dispatchEvent(new CustomEvent("dsh-prompt-predict:settings", { detail: effective }));
     }
@@ -495,10 +575,52 @@ window.__ModuleLoader__.load({
       return text.indexOf(prefix) !== 0;
     }
 
+    // 快捷键只能在当前 composer 聚焦时接管；否则 Tab 应该正常用于焦点移动。
+    function isComposerFocused(sessionId, event) {
+      try {
+        var ed = findEditor(sessionId);
+        if (!ed) return false;
+        var contains = function (node) {
+          return node === ed || (typeof ed.contains === "function" && ed.contains(node));
+        };
+        var target = event && event.target;
+        if (target && contains(target)) return true;
+        var active = document.activeElement;
+        // 没有 activeElement 的极简测试环境按聚焦处理；真实浏览器里这里通常是 body/input。
+        if (!active) return true;
+        return contains(active);
+      } catch { return false; }
+    }
+
     // ============ 模块级共享状态（composer dock 写、设置页读） ============
     // 设置页本身拿不到会话上下文，但「思考档位」必须按**会话实际模型**生成，
     // 否则用户选到的档位可能不被真实调用的模型支持（表现为「设置都对但永远没有建议」）。
-    var liveSessionId = null;
+    // 设置页与 dock 可能是两个独立模块实例：当前会话不能只存在模块变量里。
+    // dock 写入 localStorage，设置页在读取状态/点「试一下」时取最新值。
+    var LIVE_SESSION_KEY = "dsh-prompt-predict.liveSessionId";
+    function readLiveSessionId() {
+      try { return window.localStorage?.getItem(LIVE_SESSION_KEY) || null; } catch { return undefined; }
+    }
+    var liveSessionId = readLiveSessionId() || null;
+    function currentLiveSessionId() {
+      var stored = readLiveSessionId();
+      // undefined = 存储不可用；此时保留本模块内存里的值，不清掉它。
+      if (stored !== undefined && stored !== liveSessionId) liveSessionId = stored;
+      return liveSessionId;
+    }
+    function setLiveSessionId(id) {
+      var next = id || null;
+      if (liveSessionId === next && readLiveSessionId() === next) return;
+      liveSessionId = next;
+      try {
+        var store = window.localStorage;
+        if (store) {
+          if (next) store.setItem(LIVE_SESSION_KEY, next);
+          else store.removeItem(LIVE_SESSION_KEY);
+        }
+      } catch { /* 隐私模式：本次模块内仍可用 */ }
+      window.dispatchEvent(new CustomEvent("dsh-prompt-predict:session", { detail: { sessionId: next } }));
+    }
     // 预测运行记录：最近若干次（条数可在设置里调，默认 10），新的在前。
     // 持久化在应用自身的 localStorage（desktop 即 Electron 渲染层，web 即页面存储；都只在本机、不上传）：
     // 刷新页面或重启 App 后仍能回看，排障才有意义。
@@ -518,6 +640,46 @@ window.__ModuleLoader__.load({
         if (store) store.setItem(HISTORY_KEY, JSON.stringify(runHistory.slice(0, 50)));
       } catch { /* 隐私模式 / 配额满：不存也不影响功能 */ }
     }
+    function normalizeHistoryLimit(limit) {
+      var n = Number(limit);
+      return Number.isFinite(n) && n > 0 ? Math.min(50, Math.floor(n)) : 10;
+    }
+    // 加载或保存条数时立即裁剪并落盘，而不是等下一次预测才生效。
+    function trimHistoryToLimit(limit) {
+      var max = normalizeHistoryLimit(limit);
+      var list = readStoredHistory();
+      var trimmed = list.slice(0, max);
+      runHistory = trimmed;
+      if (trimmed.length !== list.length) {
+        persistHistory();
+        window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", {
+          detail: { latest: trimmed[0] || null, history: trimmed.slice() },
+        }));
+      }
+      return trimmed;
+    }
+    function historyEntryKey(item) {
+      if (item && item.id) return String(item.id);
+      // 老版本记录没有 id：用内容兜底去重，兼容已有的 localStorage 数据。
+      return [item && item.at, item && item.sessionId, item && item.provider, item && item.model,
+        item && item.suggestion, item && item.error].join("|");
+    }
+    // 撤销清空时合并「清空后的新记录」与「清空前快照」，新记录不会被覆盖。
+    function mergeHistoryLists(current, snapshot, limit) {
+      var seen = new Set();
+      var merged = [];
+      [current, snapshot].forEach(function (list) {
+        (Array.isArray(list) ? list : []).forEach(function (item) {
+          if (!item) return;
+          var key = historyEntryKey(item);
+          if (seen.has(key)) return;
+          seen.add(key);
+          merged.push(item);
+        });
+      });
+      merged.sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+      return merged.slice(0, normalizeHistoryLimit(limit));
+    }
     // 存储位置的说法要跟运行环境一致：desktop 是 Electron 渲染层，web 是页面 localStorage。
     // 措辞写死成任意一种，另一个平台就会显示错。
     function storagePlatformKey() {
@@ -533,10 +695,15 @@ window.__ModuleLoader__.load({
         var raw = window.localStorage && window.localStorage.getItem(PAUSE_KEY);
         var until = Number(raw) || 0;
         return until > Date.now() ? until : 0;
-      } catch { return 0; }
+      } catch { return -1; }   // -1 = 存储不可用，由调用方保留内存状态
     }
-    var pausedUntil = readPausedUntil();
-    function isPaused() { return pausedUntil > Date.now(); }
+    var pausedUntil = Math.max(0, readPausedUntil());
+    function isPaused() {
+      // 另一个模块实例可能刚改过暂停状态；每次判断都以共享存储为准。
+      var stored = readPausedUntil();
+      if (stored >= 0 && stored !== pausedUntil) pausedUntil = stored;
+      return pausedUntil > Date.now();
+    }
     function setPause(ms) {
       pausedUntil = ms > 0 ? Date.now() + ms : 0;
       try {
@@ -591,9 +758,11 @@ window.__ModuleLoader__.load({
       if (!raw) return String(run.sessionId);
       return raw.length > 8 ? raw.slice(-8) : raw;
     }
-    function recordRun(sessionId, result, error, title) {
+    function recordRun(sessionId, result, error, title, extra) {
+      var at = Date.now();
       var entry = {
-        at: Date.now(),
+        id: at.toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+        at: at,
         sessionId: sessionId || null,
         session: (result && result.session) || (title && String(title).trim()) || null,
         ms: result && typeof result.ms === "number" ? result.ms : null,
@@ -604,6 +773,7 @@ window.__ModuleLoader__.load({
         truncated: Boolean(result && result.truncated),
         suggestion: (result && typeof result.suggestion === "string" && result.suggestion.trim()) || null,
         error: error || null,
+        partialChars: extra && typeof extra.partialChars === 'number' ? extra.partialChars : null,
       };
       // 以已落盘的那份为准再插队：dock 与设置页可能是两个模块实例，
       // 各自内存里的 runHistory 会互相覆盖，丢记录的根源就在这里。
@@ -639,7 +809,13 @@ window.__ModuleLoader__.load({
     // 历史里一行的明细：模型 / 耗时 / 各种降级与截断标记；失败显示原因
     function historyDetail(item, t) {
       if (!item) return "";
-      if (item.error) return tt(t, "run.failedShort", { reason: String(item.error).slice(0, 80) });
+      if (item.error) {
+        var failed = tt(t, "run.failedShort", { reason: String(item.error).slice(0, 80) });
+        if (typeof item.partialChars === "number" && item.partialChars > 0) {
+          failed += " · " + tt(t, item.partialChars === 1 ? "run.partialCharsOne" : "run.partialChars", { count: item.partialChars });
+        }
+        return failed;
+      }
       var bits = [(item.provider || "?") + " / " + (item.model || "?")];
       if (typeof item.ms === "number") bits.push(item.ms + " " + tt(t, "run.ms"));
       if (item.effortDropped) bits.push(tt(t, "run.effortDropped"));
@@ -722,7 +898,7 @@ window.__ModuleLoader__.load({
         },
           h("button", {
             type: "button", onClick: onAccept,
-            title: tt(t, "ghost.acceptHint"),
+            title: tt(t, "ghost.acceptHint"), "aria-label": tt(t, "ghost.acceptHint"),
             style: {
               pointerEvents: "auto", padding: "0 9px", height: 24, borderRadius: 6,
               border: "1px solid " + token("border-l1", colors().border), background: token("bg-layer-2", colors().softBg),
@@ -730,7 +906,7 @@ window.__ModuleLoader__.load({
             },
           }, "Tab"),
           h("button", {
-            type: "button", onClick: onReroll, title: tt(t, "ghost.reroll"),
+            type: "button", onClick: onReroll, title: tt(t, "ghost.reroll"), "aria-label": tt(t, "ghost.reroll"),
             style: {
               pointerEvents: "auto", width: 24, height: 24, padding: 0, borderRadius: 6,
               border: "1px solid var(--dsw-alias-border-l1, " + colors().border + ")", background: "var(--dsw-alias-bg-secondary, " + colors().softBg + ")",
@@ -742,7 +918,8 @@ window.__ModuleLoader__.load({
             ? h("span", {
               // 覆盖层整体 pointer-events:none：这里单独放开，悬停时把设置路径直接展开在文字里
               //（原生 title 在这个渲染环境不弹，只变光标）
-              "data-prompt-predict-truncated": "true",
+              "data-prompt-predict-truncated": "true", role: "note",
+              "aria-label": tt(t, "ghost.truncatedHint"),
               style: { color: colors().ghostTruncated, fontSize: 11, whiteSpace: "nowrap", pointerEvents: "auto", cursor: "help" },
               onMouseEnter: function () { setTruncatedHover(true); },
               onMouseLeave: function () { setTruncatedHover(false); },
@@ -878,18 +1055,62 @@ window.__ModuleLoader__.load({
       dismissedByDraft.current = (draft.trim() !== "" || typedSince.current) && !prefixKept;
       var visibleSuggestion = dismissedByDraft.current ? "" : remaining;
 
+      // 把流式事件应用到 ghost：delta 逐段更新，reset 清空重来，done/error 落历史。
+      var applySuggestionEvent = function (event, isReroll) {
+        if (!event || controllerAborted()) return;
+        if (event.type === "start" || event.type === "reset") {
+          setSuggestion("");
+          setAccepted("");
+          setTruncated(false);
+          return;
+        }
+        if (event.type === "delta" && typeof event.text === "string") {
+          typedSince.current = false;
+          setSuggestion(event.text);
+          return;
+        }
+        if (event.type === "done" && typeof event.suggestion === "string") {
+          typedSince.current = false;
+          setSuggestion(event.suggestion.trim());
+          if (isReroll) setAccepted("");
+          setTruncated(Boolean(event.truncated));
+          noteSuccess();
+          recordRun(sessionId, event, null, sessionTitle);
+          return;
+        }
+        if (event.type === "error") {
+          // 流式失败时可能已经渲染过半句；错误事件必须把 ghost 收回，
+          // 不能把半句留在输入框上方。
+          setSuggestion("");
+          setAccepted("");
+          setTruncated(false);
+          var reason = event.reason || tt(t, isReroll ? "dock.rerollFailed" : "dock.noSuggestion");
+          noteFailure(sessionId, reason);
+          recordRun(sessionId, null, reason, sessionTitle, { partialChars: event.partialChars });
+        }
+      };
+      var controllerAborted = function () {
+        return Boolean(abortRef.current && abortRef.current.signal.aborted) || sessionRef.current !== sessionId;
+      };
+
       // 首次读取启用状态；设置页保存后通过事件让当前会话立即生效。
       useEffect(function () {
         api("status").then(function (j) {
           setEnabled(!(j && j.effective && j.effective.enabled === false));
-          if (j && j.effective && typeof j.effective.historySize === "number") historyLimit = j.effective.historySize;
+          if (j && j.effective && typeof j.effective.historySize === "number") {
+            historyLimit = j.effective.historySize;
+            trimHistoryToLimit(historyLimit);
+          }
         }).catch(function () { });
       }, [sessionId]);
       useEffect(function () {
         var changed = function (event) {
           var on = event.detail?.enabled !== false;
           setEnabled(on);
-          if (event.detail && typeof event.detail.historySize === "number") historyLimit = event.detail.historySize;
+          if (event.detail && typeof event.detail.historySize === "number") {
+            historyLimit = event.detail.historySize;
+            trimHistoryToLimit(historyLimit);
+          }
           if (!on) {
             setSuggestion("");
             if (abortRef.current) abortRef.current.abort();
@@ -901,7 +1122,7 @@ window.__ModuleLoader__.load({
 
       useEffect(function () {
         sessionRef.current = sessionId;
-        liveSessionId = sessionId;          // 给设置页取「会话实际模型」用
+        setLiveSessionId(sessionId);   // 给设置页取「会话实际模型」用（跨模块实例共享）
         armed.current = true;
         dismissedByDraft.current = false;
         setSuggestion("");
@@ -927,23 +1148,24 @@ window.__ModuleLoader__.load({
         var controller = new AbortController();
         abortRef.current = controller;
         var timer = setTimeout(function () {
-          api("suggest", { sessionId: sessionId })
+          var finished = false;
+          var onEvent = function (event) {
+            if (event && (event.type === "done" || event.type === "error")) finished = true;
+            applySuggestionEvent(event, false);
+          };
+          apiStream("suggest", { sessionId: sessionId }, onEvent, controller.signal)
             .then(function (result) {
-              if (controller.signal.aborted || sessionRef.current !== sessionId) return;
-              if (result && result.ok && typeof result.suggestion === "string") {
-                typedSince.current = false;
-                setSuggestion(result.suggestion.trim());
-                setTruncated(Boolean(result.truncated));
-                noteSuccess();
-                recordRun(sessionId, result, null, sessionTitle);
-              } else {
-                // 失败照样记下来：设置页会显示原因（以前是彻底静默，排查全靠猜）
-                var reason = (result && result.reason) || tt(t, "dock.noSuggestion");
-                noteFailure(sessionId, reason);
-                recordRun(sessionId, null, reason, sessionTitle);
+              if (!finished && result) {
+                applySuggestionEvent(result.ok
+                  ? Object.assign({ type: "done" }, result)
+                  : Object.assign({ type: "error" }, result), false);
               }
             })
             .catch(function (error) {
+              if (controller.signal.aborted) return;
+              setSuggestion("");
+              setAccepted("");
+              setTruncated(false);
               noteFailure(sessionId, String(error));
               recordRun(sessionId, null, String(error), sessionTitle);
             });
@@ -959,7 +1181,11 @@ window.__ModuleLoader__.load({
       useEffect(function () {
         var onPause = function (event) {
           var until = (event && event.detail && event.detail.until) || 0;
+          // 本模块可能是另一个实例发出的暂停事件，必须先同步共享状态。
+          pausedUntil = until > Date.now() ? until : 0;
           if (until > Date.now()) {
+            armed.current = false;
+            if (abortRef.current) abortRef.current.abort();
             setSuggestion("");
             setAccepted("");
             setTruncated(false);
@@ -1027,18 +1253,24 @@ window.__ModuleLoader__.load({
         if (!sessionId || !suggestion) return;
         var controller = new AbortController();
         abortRef.current = controller;
-        api("suggest", { sessionId: sessionId, reroll: true, avoid: suggestion })
+        var finished = false;
+        var onEvent = function (event) {
+          if (event && (event.type === "done" || event.type === "error")) finished = true;
+          applySuggestionEvent(event, true);
+        };
+        apiStream("suggest", { sessionId: sessionId, reroll: true, avoid: suggestion }, onEvent, controller.signal)
           .then(function (result) {
-            if (controller.signal.aborted || sessionRef.current !== sessionId) return;
-            if (result && result.ok && typeof result.suggestion === "string") {
-              setSuggestion(result.suggestion.trim());
-              setAccepted("");
-              recordRun(sessionId, result, null, sessionTitle);
-            } else {
-              recordRun(sessionId, null, (result && result.reason) || tt(t, "dock.rerollFailed"), sessionTitle);
+            if (!finished && result) {
+              applySuggestionEvent(result.ok
+                ? Object.assign({ type: "done" }, result)
+                : Object.assign({ type: "error" }, result), true);
             }
           })
           .catch(function (error) {
+            if (controller.signal.aborted) return;
+            setSuggestion("");
+            setAccepted("");
+            setTruncated(false);
             noteFailure(sessionId, String(error));
             recordRun(sessionId, null, String(error), sessionTitle);
           });
@@ -1048,6 +1280,7 @@ window.__ModuleLoader__.load({
         if (!visibleSuggestion) return;
         var onKey = function (event) {
           if (event.isComposing) return;
+          if (!isComposerFocused(sessionId, event)) return;
           if (event.key === "Escape") { event.preventDefault(); setSuggestion(""); setAccepted(""); return; }
           // 任何可打印字符 → 认定用户开始输入，隐藏建议（与「开始输入自动消失」一致）
           if (!typedSince.current && typeof event.key === "string" && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
@@ -1104,6 +1337,7 @@ window.__ModuleLoader__.load({
       var t = props.t;
       var _st = useState(null), st = _st[0], setSt = _st[1];
       var _cat = useState(null), cat = _cat[0], setCat = _cat[1];
+      var _catErr = useState(""), catalogError = _catErr[0], setCatalogError = _catErr[1];
       var _pv = useState(""), provider = _pv[0], setProvider = _pv[1];
       var _md = useState(""), model = _md[0], setModel = _md[1];
       var _to = useState(12), timeoutSec = _to[0], setTimeoutSec = _to[1];
@@ -1138,8 +1372,16 @@ window.__ModuleLoader__.load({
       // 深色模式切换时重渲染（SS 是模块级样式表，切换后需要重新取）
       useEffect(function () {
         var onTheme = function () { setThemeTick2(function (n) { return n + 1; }); };
+        var onPause = function (event) {
+          var until = (event && event.detail && event.detail.until) || 0;
+          setPauseState(until > Date.now() ? until : 0);
+        };
         window.addEventListener("dsh-prompt-predict:theme", onTheme);
-        return function () { window.removeEventListener("dsh-prompt-predict:theme", onTheme); };
+        window.addEventListener("dsh-prompt-predict:pause", onPause);
+        return function () {
+          window.removeEventListener("dsh-prompt-predict:theme", onTheme);
+          window.removeEventListener("dsh-prompt-predict:pause", onPause);
+        };
       }, []);
 
       // 暂停中每秒刷新剩余时间；到点自动恢复
@@ -1153,7 +1395,7 @@ window.__ModuleLoader__.load({
       }, [pauseState]);
 
       function clearHistory() {
-        var snapshot = history.slice();
+        var snapshot = readStoredHistory();
         runHistory = [];
         persistHistory();
         setHistory([]);
@@ -1165,9 +1407,11 @@ window.__ModuleLoader__.load({
       }
       function undoClear() {
         if (!undoSnapshot || !undoSnapshot.length) return;
-        runHistory = undoSnapshot.slice();
+        // 清空后可能已经有新预测落盘：撤销必须合并，不能整份覆盖。
+        var merged = mergeHistoryLists(readStoredHistory(), undoSnapshot, historyLimit);
+        runHistory = merged;
         persistHistory();
-        setHistory(undoSnapshot.slice());
+        setHistory(merged.slice());
         setUndoSnapshot(null);
         window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", { detail: { latest: runHistory[0] || null, history: runHistory.slice() } }));
       }
@@ -1193,7 +1437,7 @@ window.__ModuleLoader__.load({
       function loadAll() {
         // 带上当前会话 id：这样「跟随会话模型」时档位下拉拿到的是会话真实模型，
         // 而不是全局默认模型——两者不同时会让用户选到不被支持的档位。
-        api("status" + (liveSessionId ? "?sessionId=" + encodeURIComponent(liveSessionId) : "")).then(function (j) {
+        api("status" + (currentLiveSessionId() ? "?sessionId=" + encodeURIComponent(currentLiveSessionId()) : "")).then(function (j) {
           if (!j || !j.ok) return;
           setSt(j);
           if (j.version) setPluginVersion(String(j.version));
@@ -1208,12 +1452,15 @@ window.__ModuleLoader__.load({
           setSuggestionLanguage(normalizeSavedLanguage(eff.suggestionLanguage || "auto"));
           if (Array.isArray(j.languages) && j.languages.length) setLanguageCodes(j.languages);
           historyLimit = eff.historySize || 10;
-          var stored = readStoredHistory();
-          if (stored.length) setHistory(stored);
+          var stored = trimHistoryToLimit(historyLimit);
+          setHistory(stored);
           setEffort(eff.reasoningEffort || "off");
           setDirty(false);
         }).catch(function () { });
-        api("catalog").then(function (j) { if (j && j.ok) setCat(j.groups || []); }).catch(function () { });
+        api("catalog").then(function (j) {
+          if (j && j.ok) { setCat(j.groups || []); setCatalogError(""); }
+          else setCatalogError((j && j.reason) || tt(t, "settings.catalogFailed"));
+        }).catch(function (e) { setCatalogError(String(e)); });
       }
       useEffect(function () { loadAll(); }, []);
 
@@ -1244,10 +1491,11 @@ window.__ModuleLoader__.load({
           .catch(function () { setEffortOptions([]); });
       }, [provider, model, st]);
 
-      function providerGroups() { return (cat || []).filter(function (g) { return g.models && g.models.length; }); }
+      // 不可用的 provider 也要列出来：报错可见，但选项禁用，避免误选后保存失败。
+      function providerGroups() { return (cat || []).filter(function (g) { return g && g.id; }); }
       function modelsOf(p) {
         var g = (cat || []).find(function (x) { return x.id === p; });
-        return g ? g.models : [];
+        return g && Array.isArray(g.models) ? g.models : [];
       }
 
       function save() {
@@ -1262,7 +1510,7 @@ window.__ModuleLoader__.load({
           suggestionLanguage: suggestionLanguage,
           reasoningEffort: effort,
         }).then(function (j) {
-          if (j && j.ok) { notifySettings(j.effective); setMsg({ ok: true, text: tt(t, "settings.saved") }); setDirty(false); loadAll(); }
+          if (j && j.ok) { trimHistoryToLimit(historySize); notifySettings(j.effective); setMsg({ ok: true, text: tt(t, "settings.saved") }); setDirty(false); loadAll(); }
           else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
         }).catch(function (e) { setMsg({ ok: false, text: String(e) }); })
           .finally(function () { setBusy(false); });
@@ -1278,9 +1526,10 @@ window.__ModuleLoader__.load({
       // 「试一下」：直接打 /suggest，走的是和 composer 完全相同的链路（模型路由、语言、字数、
       // 截断重试都包含），所以能用来确认设置到底生效没有。
       function runTry() {
-        if (!liveSessionId) { setMsg({ ok: false, text: tt(t, "settings.testNeedSession") }); return; }
+        var sid = currentLiveSessionId();
+        if (!sid) { setMsg({ ok: false, text: tt(t, "settings.testNeedSession") }); return; }
         setBusy(true); setMsg(null); setTryResult(null);
-        api("suggest", { sessionId: liveSessionId })
+        api("suggest", { sessionId: sid })
           .then(function (j) {
             if (j && j.ok && typeof j.suggestion === "string" && j.suggestion.trim()) {
               setTryResult({
@@ -1292,7 +1541,7 @@ window.__ModuleLoader__.load({
                   unit: tt(t, "run.ms"),
                 }),
               });
-              recordRun(liveSessionId, j, null, null);
+              recordRun(sid, j, null, null);
             } else {
               setMsg({ ok: false, text: (j && j.reason) || tt(t, "dock.noSuggestion") });
             }
@@ -1331,7 +1580,7 @@ window.__ModuleLoader__.load({
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.provider")),
           h("select", {
-            style: SS.select, value: provider, disabled: !enabled || busy,
+            style: SS.select, value: provider, disabled: !enabled || busy, "aria-label": tt(t, "settings.provider"),
             onChange: function (e) {
               var p = e.target.value;
               setProvider(p);
@@ -1342,26 +1591,41 @@ window.__ModuleLoader__.load({
           },
             h("option", { value: "auto" }, tt(t, "settings.followSession")),
             providerGroups().map(function (g) {
-              return h("option", { key: g.id, value: g.id }, g.name + "（" + g.id + "）");
+              return h("option", {
+                key: g.id, value: g.id, disabled: Boolean(g.error),
+              }, g.name + "（" + g.id + (g.error ? " · " + tt(t, "settings.providerUnavailableShort") : "") + "）");
             }))),
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.model")),
           h("select", {
-            style: SS.select, value: model, disabled: !enabled || busy || provider === "auto",
+            style: SS.select, value: model, disabled: !enabled || busy || provider === "auto", "aria-label": tt(t, "settings.model"),
             onChange: function (e) { setModel(e.target.value); setEffort("auto"); setDirty(true); },
           },
             provider === "auto"
               ? h("option", { value: "auto" }, tt(t, "settings.followSession"))
-              : modelsOf(provider).map(function (m) {
-                  return h("option", { key: m.id, value: m.id }, m.name + "（" + m.id + "）");
-                }))),
+              : (function () {
+                  var models = modelsOf(provider);
+                  if (!models.length) return h("option", { value: "", disabled: true }, tt(t, "settings.noModels"));
+                  return models.map(function (m) {
+                    return h("option", { key: m.id, value: m.id }, m.name + "（" + m.id + "）");
+                  });
+                })())),
         h("p", { style: SS.muted }, tt(t, "settings.modelHint")),
+        catalogError
+          ? h("p", { style: SS.warnBlock }, tt(t, "settings.catalogError", { detail: catalogError }))
+          : null,
+        (function () {
+          var selected = (cat || []).find(function (g) { return g.id === provider; });
+          return selected && selected.error
+            ? h("p", { style: SS.warnBlock }, tt(t, "settings.providerError", { detail: selected.error }))
+            : null;
+        })(),
 
         h("p", { style: SS.muted }, tt(t, "settings.predictionSection")),
         h("div", { style: SS.row },
         h("span", { style: SS.label }, tt(t, "settings.suggestionLanguage")),
         h("select", {
-            style: SS.select, value: languageFamily(suggestionLanguage), disabled: !enabled || busy,
+            style: SS.select, value: languageFamily(suggestionLanguage), disabled: !enabled || busy, "aria-label": tt(t, "settings.suggestionLanguage"),
             "data-prompt-predict-language": "true",
             onChange: function (e) {
               var next = e.target.value;
@@ -1408,14 +1672,14 @@ window.__ModuleLoader__.load({
           h(InfoHint, { text: tt(t, "settings.suggestionLanguageHint"), full: tt(t, "settings.suggestionLanguageHintFull") })),
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.outputChars")),
-          h("input", { style: SS.input, type: "number", min: 20, max: 400, step: 10, value: outputChars, disabled: !enabled || busy, "data-prompt-predict-chars": "true", onChange: function (e) { setOutputChars(Number(e.target.value)); setDirty(true); } }),
+          h("input", { style: SS.input, type: "number", min: 20, max: 400, step: 10, value: outputChars, disabled: !enabled || busy, "data-prompt-predict-chars": "true", "aria-label": tt(t, "settings.outputChars"), onChange: function (e) { setOutputChars(Number(e.target.value)); setDirty(true); } }),
           h(InfoHint, { text: tt(t, "settings.outputCharsHint") + wordHint(suggestionLanguage, outputChars, t), full: tt(t, "settings.outputCharsHintFull") })),
 
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.pause")),
           h("button", {
             type: "button", style: dim(Object.assign({}, SS.btnGhost, { whiteSpace: "nowrap" }), busy), disabled: busy,
-            "data-prompt-predict-pause": "true",
+            "data-prompt-predict-pause": "true", "aria-pressed": Boolean(pauseState),
             onClick: togglePause,
           }, pauseState
             ? tt(t, "settings.pauseResume")
@@ -1427,30 +1691,30 @@ window.__ModuleLoader__.load({
             full: tt(t, "settings.pauseHintFull"),
           })),
 
-        h("p", null, h("button", { style: SS.advBtn, onClick: function () { setAdv(!adv); } }, (adv ? "▾" : "▸") + tt(t, "settings.advanced"))),
+        h("p", null, h("button", { style: SS.advBtn, "aria-expanded": adv, onClick: function () { setAdv(!adv); } }, (adv ? "▾" : "▸") + tt(t, "settings.advanced"))),
         adv ? h("div", null,
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.timeout")),
-            h("input", { style: SS.input, type: "number", min: 1, max: 60, value: timeoutSec, disabled: !enabled || busy, onChange: function (e) { setTimeoutSec(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 1, max: 60, value: timeoutSec, "aria-label": tt(t, "settings.timeout"), disabled: !enabled || busy, onChange: function (e) { setTimeoutSec(Number(e.target.value)); setDirty(true); } }),
             h("span", { style: SS.muted }, tt(t, "settings.timeoutUnit"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.contextSize")),
-            h("select", { style: SS.select, value: ctxSize, disabled: !enabled || busy, onChange: function (e) { setCtxSize(Number(e.target.value)); setDirty(true); } },
+            h("select", { style: SS.select, value: ctxSize, disabled: !enabled || busy, "aria-label": tt(t, "settings.contextSize"), onChange: function (e) { setCtxSize(Number(e.target.value)); setDirty(true); } },
               h("option", { value: 3 }, tt(t, "settings.contextSmall")),
               h("option", { value: 8 }, tt(t, "settings.contextStandard")),
               h("option", { value: 12 }, tt(t, "settings.contextLarge"))),
             h("span", { style: SS.muted }, tt(t, "settings.contextHint"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.maxChars")),
-            h("input", { style: SS.input, type: "number", min: 1000, max: 20000, step: 500, value: maxChars, disabled: !enabled || busy, onChange: function (e) { setMaxChars(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 1000, max: 20000, step: 500, value: maxChars, "aria-label": tt(t, "settings.maxChars"), disabled: !enabled || busy, onChange: function (e) { setMaxChars(Number(e.target.value)); setDirty(true); } }),
             h("span", { style: SS.muted }, tt(t, "settings.maxCharsHint"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.historySize")),
-            h("input", { style: SS.input, type: "number", min: 1, max: 50, step: 1, value: historySize, disabled: !enabled || busy, onChange: function (e) { setHistorySize(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 1, max: 50, step: 1, value: historySize, "aria-label": tt(t, "settings.historySize"), disabled: !enabled || busy, onChange: function (e) { setHistorySize(Number(e.target.value)); setDirty(true); } }),
             h("span", { style: SS.muted }, tt(t, "settings.historySizeHint", { storage: tt(t, storagePlatformKey()) }))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.effort")),
-            h("select", { style: SS.select, value: effort, disabled: !enabled || busy, onChange: function (e) { setEffort(e.target.value); setDirty(true); } },
+            h("select", { style: SS.select, value: effort, disabled: !enabled || busy, "aria-label": tt(t, "settings.effort"), onChange: function (e) { setEffort(e.target.value); setDirty(true); } },
               h("option", { value: "auto" }, effortOptions.length === 0 ? tt(t, "settings.effortDefaultNoLevels") : tt(t, "settings.effortDefault")),
               (function () {
                 var ids = effortOptions.slice();
@@ -1502,9 +1766,10 @@ window.__ModuleLoader__.load({
                 var key = String(item.at) + "-" + index;
                 var isOpen = activeKey === key;
                 return h("div", { key: key, style: SS.histRowWrap },
-                  h("div", {
-                    "data-prompt-predict-history-row": "true",
-                    style: Object.assign({}, SS.histRow, { cursor: "pointer" }),
+                  h("button", {
+                    type: "button",
+                    "data-prompt-predict-history-row": "true", "aria-expanded": isOpen,
+                    style: Object.assign({}, SS.histRow, SS.histRowButton),
                     onClick: function () { setOpenKey(isOpen ? "" : key); },
                     title: tt(t, "settings.historyToggle"),
                   },
@@ -1518,7 +1783,8 @@ window.__ModuleLoader__.load({
                       item.suggestion
                         ? h("button", {
                           type: "button", style: SS.copyBtn, "data-prompt-predict-history-copy": "true",
-                          onClick: function () { copySuggestion(key, item.suggestion); },
+                          onClick: function (event) { if (event) event.stopPropagation(); copySuggestion(key, item.suggestion); },
+                          onKeyDown: function (event) { if (event) event.stopPropagation(); },
                         }, copiedKey === key ? tt(t, "settings.historyCopied") : tt(t, "settings.historyCopy"))
                         : null)
                     : null);

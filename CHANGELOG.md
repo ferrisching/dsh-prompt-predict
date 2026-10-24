@@ -6,6 +6,55 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.8] — 2026-10-24
+
+### Added
+
+- **The client consumes the NDJSON stream.** The composer requests `stream: true`, renders `delta` text as it arrives, clears on `reset`, finalises on `done` and records failures on `error`; a Host that does not stream (or a response without a readable body) falls back to the old single-JSON path. Reroll uses the same stream.
+
+- **NDJSON streaming on the Host.** `POST /dsh-prompt-predict/suggest` with `stream: true` now returns `application/x-ndjson` events (`start`, `delta`, `reset`, `done`, `error`), while requests without `stream` keep the existing single-JSON response. `predictNextPrompt` gained an `onDelta` callback; retries emit `reset` before streaming the replacement.
+
+### Changed
+
+- **Compatibility verified on DSH `0.2.1-rc.3`** (the installed desktop build and the current nightly feed), not just `0.2.1-rc.2`.
+- **History rows are now a real `<button>`** with the copy control as a sibling, instead of a `role=button` container; keyboard and screen-reader semantics are cleaner.
+- **NDJSON deltas are coalesced every 40 ms** on the Host, with a forced flush before `reset`, `done` and `error`, so fast models no longer produce one event per token.
+- **The client source is split into `client/src/` fragments**, assembled into the single `client/client.js` by `npm run build:client` (`pretest` / `prepack` run it automatically). The generated bundle is byte-identical; behaviour is unchanged.
+
+### Added
+
+- **Accessibility pass**: the reroll/truncation controls now have accessible names, every settings select and numeric input has an `aria-label`, pause exposes `aria-pressed`, advanced exposes `aria-expanded`, and history rows are keyboard-operable buttons with `aria-expanded`.
+
+- **Optional real-DSH smoke test** (`npm run test:smoke`): disposable profile + local mock LLM + headless Edge/CDP, covering ghost display, composer focus scoping, reroll and pause.
+
+### Fixed
+
+- **Streaming requests keep both cancellation and a timeout.** The client stream honours the composer's AbortSignal and still aborts itself after 60 seconds; a stream-level `error` clears any half-rendered ghost, and reports `partialChars` (code-point count) in the error event and failed history (shown only when greater than zero).
+- **Suggestion memory is bounded and near-duplicates are filtered.** The host keeps the last suggestion
+  per session in a 100-entry LRU, so long-running apps with many sessions no longer grow it without
+  limit. Duplicate detection now ignores case, whitespace, surrounding quotes and trailing sentence
+  punctuation, and treats edits of up to two characters (on strings of at least eight characters) as the
+  same suggestion, triggering the reroll instead of showing a reworded copy.
+- **Provider catalog failures are visible and bounded.** Each provider is queried with a 3 s timeout and
+  cached (60 s for success, 15 s for failure). A failing provider stays in the list with its error,
+  disabled in the picker, and the settings page prints the reason instead of silently offering no models.
+- **History size changes take effect immediately.** Loading or saving a smaller limit now trims the stored
+  records and broadcasts the trimmed list, instead of waiting for the next prediction.
+- **Undoing a history clear no longer discards new predictions.** The pre-clear snapshot is merged with
+  records created after the clear, deduplicated by stable record ids (with a content fallback for older
+  entries) and sorted newest-first.
+- **Reasoning effort validation follows the model's actual capabilities.** `minimal`, `medium` and any
+  other level advertised by `resolveModelInfo` can now be saved; the old hard-coded `off/low/high/max`
+  whitelist no longer rejects them. Explicit `off` remains available even when the model exposes no
+  reasoning levels, and unsupported levels are still rejected.
+- **Pause and the current session id now work across independent client module instances.** The pause
+  deadline and the session used by "Test now" are shared through local storage, not just module-local
+  variables. Pausing also aborts an in-flight prediction instead of merely hiding its result.
+- **Keyboard shortcuts are scoped to the focused composer.** `Tab`, `Alt+Right` and `Escape` no longer
+  intercept input while you are in settings or another text field.
+- **Rerolling updates all suggestion state.** The truncation marker follows the new response, and the
+  shared failure counter is reset on success / incremented on failure just like a normal prediction.
+
 ## [0.2.7] — 2026-10-21
 
 ### Fixed
