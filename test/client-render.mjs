@@ -204,6 +204,7 @@ function makeEnv() {
 let testUserAgent = 'node-test';
 let fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 let registryVersion = '9.9.9';
+let registryFails = false;
 let holdSuggest = null;   // 挂起 /suggest 响应，用来观察生成中占位   // npm registry /latest 的返回值，与 /status 里的版本独立
 let ndjsonLines = null;
 let ndjsonDelayMs = 0;   // 每段 NDJSON 之间的延迟
@@ -237,6 +238,7 @@ function loadClient(localeService, sharedEnv) {
     fetch: async (url, options) => {
       env.fetchCalls.push({ url: String(url), options });
       if (String(url).startsWith('https://registry.npmjs.org/')) {
+        if (registryFails) return { ok: false, status: 500, json: async () => ({}) };
         return { ok: true, json: async () => ({ version: registryVersion }) };
       }
       if (holdSuggest && String(url).includes('/suggest')) await holdSuggest;
@@ -821,6 +823,17 @@ check('设置页列出最近预测（含会话标题）',
     JSON.stringify(body));
 }
 
+// 自动检查失败时给出可重试提示
+{
+  registryFails = true;
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await view.settle(4);
+  check('自动检查更新失败时显示重试提示',
+    find(view.tree, (n) => n.props && n.props['data-prompt-predict-update-auto-error'] === 'true').length === 1, '');
+  registryFails = false;
+}
+
 // 更新提示只在设置页自动出现，不再占用 composer
 {
   registryVersion = '9.9.10';
@@ -1039,6 +1052,27 @@ check('设置页列出最近预测（含会话标题）',
   await view.settle(3);
   check('运行中关闭切换后 ↓ 不再请求',
     suggestCalls().length === before && /A/.test(textOf(view.tree)), textOf(view.tree).slice(0, 40));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
+// 切换次数 0 = 不限；第一条时按 ↑ 不请求也不报错
+{
+  fetchResult = { suggestion: 'A', version: '9.9.9', effective: { switchEnabled: true, switchLimit: 0 } };
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(4);
+  const suggestCalls = () => inst.env.fetchCalls.filter((c) => c.url.includes('/suggest'));
+  const before = suggestCalls().length;
+  inst.env.window.dispatchEvent({ type: 'keydown', key: 'ArrowUp', preventDefault() {}, stopPropagation() {} });
+  await view.settle(2);
+  check('第一条建议时按 ↑ 不请求、建议保持',
+    suggestCalls().length === before && /A/.test(textOf(view.tree)), '');
+  for (const value of ['B', 'C']) {
+    fetchResult = { suggestion: value, version: '9.9.9', effective: { switchEnabled: true, switchLimit: 0 } };
+    inst.env.window.dispatchEvent({ type: 'keydown', key: 'ArrowDown', code: 'ArrowDown', preventDefault() {}, stopPropagation() {} });
+    await view.settle(3);
+  }
+  check('switchLimit=0 时可连续生成', /C/.test(textOf(view.tree)) && suggestCalls().length === before + 2, '');
   fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 }
 
