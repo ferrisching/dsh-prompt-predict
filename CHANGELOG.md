@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [Unreleased]
+
+### Changed
+
+- **Update notices moved out of the composer.** They now live in Settings, which checks npm automatically when opened (throttled to once per 10 minutes) and shows the copyable upgrade command; the dismiss/restore banner under the input was removed.
+
 ## [0.2.9] — 2026-10-28
 
 ### Added

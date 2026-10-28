@@ -75,7 +75,7 @@ Replace `--profile` with your own profile (usually `desktop` on the desktop app,
 dsh plugin --profile desktop add dsh-prompt-predict@latest
 ```
 
-From a source checkout, `bash scripts/update.sh [profile]` does the same and also converges the lockfile; it refuses to run while the app is still up — quit it first. The settings page also has a **Check for updates** button next to the version; it detects the running environment (desktop app / web build) and pre-fills the profile in the update command. The composer also checks automatically once per session and shows a dismissible notice when a newer version exists (dismissal is remembered per version, and the settings page can restore a dismissed notice with one click — no localStorage digging).
+From a source checkout, `bash scripts/update.sh [profile]` does the same and also converges the lockfile; it refuses to run while the app is still up — quit it first. The settings page has a **Check for updates** button next to the version and also checks npm automatically when opened (at most once every 10 minutes); it detects the running environment (desktop app / web build) and pre-fills the profile in the update command. Update notices live only in Settings — there is no banner under the composer.
 
 > ⚠️ **The CLI only installs the package.** DSH loads a plugin only when it is also listed in
 > `dsh.profile.bundles` inside `~/.dsh/profiles/<profile>/package.json`. Verified: with the package

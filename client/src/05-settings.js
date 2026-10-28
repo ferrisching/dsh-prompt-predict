@@ -48,7 +48,6 @@
       var _theme2 = useState(0), themeTick2 = _theme2[0], setThemeTick2 = _theme2[1];
       var _ver = useState(null), pluginVersion = _ver[0], setPluginVersion = _ver[1];
       var _upd = useState(""), updateState = _upd[0], setUpdateState = _upd[1];   // "" | "checking"
-      var _dis = useState(readDismissedUpdate()), dismissedVersion = _dis[0], setDismissedVersion = _dis[1];
       var _updInfo = useState(null), updateInfo = _updInfo[0], setUpdateInfo = _updInfo[1];
       var _undo = useState(null), undoSnapshot = _undo[0], setUndoSnapshot = _undo[1];   // 清空后可撤销的快照
 
@@ -101,12 +100,6 @@
         setHistory(merged.slice());
         setUndoSnapshot(null);
         window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", { detail: { latest: runHistory[0] || null, history: runHistory.slice() } }));
-      }
-      // 撤销「忽略」：清掉本机记录，并通知 composer 立刻重新检查（不用重启）。
-      function restoreUpdateNotice() {
-        try { window.localStorage?.removeItem(UPDATE_DISMISS_KEY); } catch { /* 清理失败就算了 */ }
-        setDismissedVersion("");
-        window.dispatchEvent(new CustomEvent("dsh-prompt-predict:update-dismiss-reset"));
       }
       // 直接向 npm registry 查 latest（registry 允许跨域），失败就提示网络问题。
       function checkUpdate() {
@@ -179,6 +172,16 @@
         }).catch(function (e) { setCatalogError(String(e)); });
       }
       useEffect(function () { loadAll(); }, []);
+
+      // 打开设置页时自动检查一次（10 分钟内不重复）；更新提示只出现在这里，不占用 composer。
+      useEffect(function () {
+        if (!pluginVersion) return;
+        if (Date.now() - readLastUpdateCheck() < UPDATE_CHECK_INTERVAL) return;
+        markUpdateChecked();
+        fetchLatestVersion().then(function (latest) {
+          if (latest && versionNewer(latest, pluginVersion)) setUpdateInfo({ status: "found", version: latest });
+        }).catch(function () { /* 网络问题静默 */ });
+      }, [pluginVersion]);
 
       // 新配的 provider 不必等缓存过期：手动绕过 Host 的 60s 缓存。
       function refreshCatalog() {
@@ -326,16 +329,6 @@
               : updateInfo.status === "latest"
                 ? tt(t, "settings.updateLatest")
                 : tt(t, "settings.updateError"))
-          : null,
-        !updateInfo && dismissedVersion
-          ? h("p", { style: SS.muted, "data-prompt-predict-update-restore": "true" },
-            h("span", null, tt(t, "settings.updateIgnored", { version: dismissedVersion })),
-            h("button", {
-              type: "button",
-              style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
-              "data-prompt-predict-update-restore-btn": "true",
-              onClick: restoreUpdateNotice,
-            }, tt(t, "settings.updateRestore")))
           : null,
         h("p", { style: SS.muted }, tt(t, "settings.desc")),
         h("p", {

@@ -117,14 +117,6 @@
         .then(function (j) { return j && typeof j.version === "string" ? j.version : ""; })
         .finally(function () { clearTimeout(timer); });
     }
-    // 自动更新提示的「忽略」状态：按版本号记在本机，同一版本只提醒一次。
-    var UPDATE_DISMISS_KEY = "dsh-prompt-predict.updateDismissed";
-    function readDismissedUpdate() {
-      try { return window.localStorage?.getItem(UPDATE_DISMISS_KEY) || ""; } catch { return ""; }
-    }
-    function setDismissedUpdate(version) {
-      try { window.localStorage?.setItem(UPDATE_DISMISS_KEY, String(version)); } catch { /* 忽略失败就算了 */ }
-    }
     // 自动更新检查的去重：localStorage 时间戳，跨模块实例 10 分钟内只查一次
     // （同屏多个 composer dock 各自挂载，否则会各发一次 registry 请求）。
     var UPDATE_CHECK_TS_KEY = "dsh-prompt-predict.lastUpdateCheck";

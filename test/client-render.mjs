@@ -821,68 +821,16 @@ check('设置页列出最近预测（含会话标题）',
     JSON.stringify(body));
 }
 
-// 自动更新提示：composer 挂载后自动查 registry，发现未忽略的新版显示可关闭提示
+// 更新提示只在设置页自动出现，不再占用 composer
 {
   registryVersion = '9.9.10';
   const inst = setup();
-  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
-  await view.settle(6);
-  const notice = () => find(view.tree, (n) => n.props && n.props['data-prompt-predict-update-notice'] === 'true')[0];
-  check('发现未忽略的新版时自动弹出更新提示',
-    Boolean(notice()) && /v9\.9\.10/.test(textOf(view.tree))
-    && /dsh plugin --profile web add dsh-prompt-predict@9\.9\.10/.test(textOf(view.tree)),
-    textOf(view.tree).slice(0, 120));
-
-  find(view.tree, (n) => n.props && n.props['data-prompt-predict-update-dismiss'] === 'true')[0]?.props?.onClick?.();
-  await view.settle(3);
-  check('点「忽略」后提示消失并记入本机',
-    !notice() && inst.env.localStorage.getItem('dsh-prompt-predict.updateDismissed') === '9.9.10',
-    String(inst.env.localStorage.getItem('dsh-prompt-predict.updateDismissed')));
-  registryVersion = '9.9.9';
-}
-
-// 已忽略过的版本不再自动提示
-{
-  registryVersion = '9.9.10';
-  const inst = setup();
-  inst.env.localStorage.setItem('dsh-prompt-predict.updateDismissed', '9.9.10');
-  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
-  await view.settle(6);
-  check('同一版本被忽略后不再自动提示',
-    find(view.tree, (n) => n.props && n.props['data-prompt-predict-update-notice'] === 'true').length === 0, '');
-  registryVersion = '9.9.9';
-}
-
-// 设置页入口：撤销已忽略的更新版本（不用清 localStorage）
-{
-  const inst = setup();
-  inst.env.localStorage.setItem('dsh-prompt-predict.updateDismissed', '9.9.10');
   const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
-  await view.settle();
-  const text = textOf(view.tree);
-  const restoreBtn = find(view.tree, (n) => n.props && n.props['data-prompt-predict-update-restore-btn'] === 'true')[0];
-  check('设置页显示已忽略版本与「恢复提示」入口',
-    /已忽略 v9\.9\.10 的更新提示/.test(text) && Boolean(restoreBtn), text.slice(0, 90));
-  restoreBtn?.props?.onClick?.();
-  await view.settle(3);
-  check('点「恢复提示」后本机记录被清除',
-    inst.env.localStorage.getItem('dsh-prompt-predict.updateDismissed') === null
-    && !/已忽略 v9\.9\.10/.test(textOf(view.tree)),
-    String(inst.env.localStorage.getItem('dsh-prompt-predict.updateDismissed')));
-}
-
-// composer 响应恢复事件：被忽略的版本在撤销后立刻重新弹出提示
-{
-  registryVersion = '9.9.10';
-  const inst = setup();
-  inst.env.localStorage.setItem('dsh-prompt-predict.updateDismissed', '9.9.10');
-  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
   await view.settle(6);
-  const hasNotice = () => find(view.tree, (n) => n.props && n.props['data-prompt-predict-update-notice'] === 'true').length > 0;
-  check('恢复前已忽略的版本不弹提示', !hasNotice(), '');
-  inst.env.window.dispatchEvent({ type: 'dsh-prompt-predict:update-dismiss-reset' });
-  await view.settle(4);
-  check('撤销忽略后 composer 立刻重新弹出提示', hasNotice() && /v9\.9\.10/.test(textOf(view.tree)), '');
+  check('打开设置页时自动检查并在页内显示新版',
+    /发现新版本 v9\.9\.10/.test(textOf(view.tree)), textOf(view.tree).slice(0, 80));
+  check('composer 不再渲染更新提示节点',
+    find(view.tree, (n) => n.props && n.props['data-prompt-predict-update-notice'] === 'true').length === 0, '');
   registryVersion = '9.9.9';
 }
 

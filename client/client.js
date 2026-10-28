@@ -105,8 +105,6 @@ window.__ModuleLoader__.load({
         "settings.updateStep2": "2. 在终端执行上面的命令（profile 已按当前环境填好；自定义 profile 请自行替换）",
         "settings.updateStep3": "3. 重新打开 App 生效；仅客户端改动时刷新窗口即可",
         "settings.updateOtherEnv": "如需在另一个环境也安装，把命令中的 profile 换成另一个（desktop ↔ web）后重复执行。",
-        "settings.updateIgnored": "已忽略 v{version} 的更新提示",
-        "settings.updateRestore": "恢复提示",
         "settings.updateCopy": "复制命令",
         "settings.updateCopied": "已复制",
         "settings.updateError": "检查失败：无法访问 registry.npmjs.org",
@@ -246,8 +244,6 @@ window.__ModuleLoader__.load({
         "settings.updateStep2": "2. Run the command above in a terminal (profile pre-filled for this environment; replace it if you use a custom profile)",
         "settings.updateStep3": "3. Reopen the app; client-only changes only need a window reload",
         "settings.updateOtherEnv": "To install in the other environment too, repeat the command with the other profile (desktop ↔ web).",
-        "settings.updateIgnored": "Update notice dismissed for v{version}",
-        "settings.updateRestore": "Restore notice",
         "settings.updateCopy": "Copy command",
         "settings.updateCopied": "Copied",
         "settings.updateError": "Check failed: cannot reach registry.npmjs.org",
@@ -862,14 +858,6 @@ window.__ModuleLoader__.load({
         .then(function (j) { return j && typeof j.version === "string" ? j.version : ""; })
         .finally(function () { clearTimeout(timer); });
     }
-    // 自动更新提示的「忽略」状态：按版本号记在本机，同一版本只提醒一次。
-    var UPDATE_DISMISS_KEY = "dsh-prompt-predict.updateDismissed";
-    function readDismissedUpdate() {
-      try { return window.localStorage?.getItem(UPDATE_DISMISS_KEY) || ""; } catch { return ""; }
-    }
-    function setDismissedUpdate(version) {
-      try { window.localStorage?.setItem(UPDATE_DISMISS_KEY, String(version)); } catch { /* 忽略失败就算了 */ }
-    }
     // 自动更新检查的去重：localStorage 时间戳，跨模块实例 10 分钟内只查一次
     // （同屏多个 composer dock 各自挂载，否则会各发一次 registry 请求）。
     var UPDATE_CHECK_TS_KEY = "dsh-prompt-predict.lastUpdateCheck";
@@ -1335,10 +1323,8 @@ window.__ModuleLoader__.load({
       var _dt = useState(0), draftTick = _dt[0], setDraftTick = _dt[1];
       var _theme = useState(0), themeTick = _theme[0], setThemeTick = _theme[1];
       var _fail = useState(failState), failure = _fail[0], setFailure = _fail[1];
-      var _notice = useState(null), updateNotice = _notice[0], setUpdateNotice = _notice[1];   // 自动更新提示（版本号）
       var _me = useState(""), manualError = _me[0], setManualError = _me[1];   // 手动换一条失败的原因
       var _mk = useState("failed"), manualErrorKind = _mk[0], setManualErrorKind = _mk[1];
-      var currentVersionRef = useRef(null);   // 状态接口拿到的当前版本，供恢复提示时重新比较
       var _en = useState(true), enabled = _en[0], setEnabled = _en[1];
       var _swi = useState(true), switchEnabled = _swi[0], setSwitchEnabled = _swi[1];
       var switchLimitRef = useRef(3);
@@ -1508,17 +1494,6 @@ window.__ModuleLoader__.load({
           if (j && j.effective && typeof j.effective.historySize === "number") {
             historyLimit = j.effective.historySize;
             trimHistoryToLimit(historyLimit);
-          }
-          // 自动更新检查：拿到当前版本后查一次 registry；发现新版且未忽略过 → 显示提示
-          if (j && j.version) currentVersionRef.current = String(j.version);
-          if (j && j.version && Date.now() - readLastUpdateCheck() > UPDATE_CHECK_INTERVAL) {
-            markUpdateChecked();
-            var current = String(j.version);
-            fetchLatestVersion().then(function (latest) {
-              if (latest && versionNewer(latest, current) && readDismissedUpdate() !== latest) {
-                setUpdateNotice(latest);
-              }
-            }).catch(function () { /* 网络问题静默，不打扰用户 */ });
           }
         }).catch(function () { });
       }, [sessionId]);
@@ -1911,19 +1886,6 @@ window.__ModuleLoader__.load({
         };
       }, []);
 
-      // 设置页「恢复提示」→ 立刻重新查 registry，满足条件就把提示弹回来
-      useEffect(function () {
-        var onReset = function () {
-          fetchLatestVersion().then(function (latest) {
-            if (latest && versionNewer(latest, currentVersionRef.current || "0")) {
-              setUpdateNotice(latest);
-            }
-          }).catch(function () { /* 网络问题静默 */ });
-        };
-        window.addEventListener("dsh-prompt-predict:update-dismiss-reset", onReset);
-        return function () { window.removeEventListener("dsh-prompt-predict:update-dismiss-reset", onReset); };
-      }, []);
-
       // 因为「有草稿就不预测」会直接 return，草稿被清空后需要重新触发一次。
       // rc.2 没有 draft 可订阅，只能监听编辑器的输入事件，发现变空就 bump 一下。
       useEffect(function () {
@@ -2134,22 +2096,7 @@ window.__ModuleLoader__.load({
       if (!dockBody && pausedUntil > pauseNow) {
         dockBody = h(ComposerHint, { sessionId: sessionId, text: tt(t, "dock.paused", { time: formatLeft(pausedUntil - pauseNow) }), t: t });
       }
-      if (!updateNotice) return dockBody;
-      // 自动更新提示：一行版本 + 已按环境填好的命令，可忽略（按版本记本机，不重复烦人）
-      return h("div", null,
-        h("div", {
-          "data-prompt-predict-update-notice": "true",
-          style: { fontSize: 12, lineHeight: 1.7, marginBottom: 2, color: colors().muted },
-        },
-          h("span", null, tt(t, "settings.updateFound", { version: updateNotice })),
-          h("button", {
-            type: "button", "data-prompt-predict-update-dismiss": "true",
-            style: { background: "none", border: 0, color: colors().muted, fontSize: 12, cursor: "pointer", padding: "0 4px", textDecoration: "underline" },
-            onClick: function () { setDismissedUpdate(updateNotice); setUpdateNotice(null); },
-          }, tt(t, "ghost.dismiss")),
-          h("span", { style: { display: "block", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" } },
-            "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateNotice)),
-        dockBody);
+      return dockBody;
     }
 
     // 模型能力查询带 5 分钟缓存：设置页每次打开/保存都重查的话，provider 慢时会反复卡 3.5 秒超时。
@@ -2202,7 +2149,6 @@ window.__ModuleLoader__.load({
       var _theme2 = useState(0), themeTick2 = _theme2[0], setThemeTick2 = _theme2[1];
       var _ver = useState(null), pluginVersion = _ver[0], setPluginVersion = _ver[1];
       var _upd = useState(""), updateState = _upd[0], setUpdateState = _upd[1];   // "" | "checking"
-      var _dis = useState(readDismissedUpdate()), dismissedVersion = _dis[0], setDismissedVersion = _dis[1];
       var _updInfo = useState(null), updateInfo = _updInfo[0], setUpdateInfo = _updInfo[1];
       var _undo = useState(null), undoSnapshot = _undo[0], setUndoSnapshot = _undo[1];   // 清空后可撤销的快照
 
@@ -2255,12 +2201,6 @@ window.__ModuleLoader__.load({
         setHistory(merged.slice());
         setUndoSnapshot(null);
         window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", { detail: { latest: runHistory[0] || null, history: runHistory.slice() } }));
-      }
-      // 撤销「忽略」：清掉本机记录，并通知 composer 立刻重新检查（不用重启）。
-      function restoreUpdateNotice() {
-        try { window.localStorage?.removeItem(UPDATE_DISMISS_KEY); } catch { /* 清理失败就算了 */ }
-        setDismissedVersion("");
-        window.dispatchEvent(new CustomEvent("dsh-prompt-predict:update-dismiss-reset"));
       }
       // 直接向 npm registry 查 latest（registry 允许跨域），失败就提示网络问题。
       function checkUpdate() {
@@ -2333,6 +2273,16 @@ window.__ModuleLoader__.load({
         }).catch(function (e) { setCatalogError(String(e)); });
       }
       useEffect(function () { loadAll(); }, []);
+
+      // 打开设置页时自动检查一次（10 分钟内不重复）；更新提示只出现在这里，不占用 composer。
+      useEffect(function () {
+        if (!pluginVersion) return;
+        if (Date.now() - readLastUpdateCheck() < UPDATE_CHECK_INTERVAL) return;
+        markUpdateChecked();
+        fetchLatestVersion().then(function (latest) {
+          if (latest && versionNewer(latest, pluginVersion)) setUpdateInfo({ status: "found", version: latest });
+        }).catch(function () { /* 网络问题静默 */ });
+      }, [pluginVersion]);
 
       // 新配的 provider 不必等缓存过期：手动绕过 Host 的 60s 缓存。
       function refreshCatalog() {
@@ -2480,16 +2430,6 @@ window.__ModuleLoader__.load({
               : updateInfo.status === "latest"
                 ? tt(t, "settings.updateLatest")
                 : tt(t, "settings.updateError"))
-          : null,
-        !updateInfo && dismissedVersion
-          ? h("p", { style: SS.muted, "data-prompt-predict-update-restore": "true" },
-            h("span", null, tt(t, "settings.updateIgnored", { version: dismissedVersion })),
-            h("button", {
-              type: "button",
-              style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
-              "data-prompt-predict-update-restore-btn": "true",
-              onClick: restoreUpdateNotice,
-            }, tt(t, "settings.updateRestore")))
           : null,
         h("p", { style: SS.muted }, tt(t, "settings.desc")),
         h("p", {
