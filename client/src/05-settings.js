@@ -1,3 +1,17 @@
+    // 模型能力查询带 5 分钟缓存：设置页每次打开/保存都重查的话，provider 慢时会反复卡 3.5 秒超时。
+    var effortsCache = new Map();
+    function getEfforts(p, m) {
+      var key = p + "/" + m;
+      var hit = effortsCache.get(key);
+      if (hit && Date.now() - hit.at < 5 * 60 * 1000) return Promise.resolve(hit.efforts);
+      return api("efforts?provider=" + encodeURIComponent(p) + "&model=" + encodeURIComponent(m))
+        .then(function (j) {
+          var efforts = j && j.ok && Array.isArray(j.efforts) ? j.efforts : [];
+          effortsCache.set(key, { at: Date.now(), efforts: efforts });
+          return efforts;
+        });
+    }
+
     // ================= 设置页 =================
     function SettingsSection(props) {
       var t = props.t;
@@ -10,6 +24,9 @@
       var _ctx = useState(8), ctxSize = _ctx[0], setCtxSize = _ctx[1];
       var _mc = useState(6000), maxChars = _mc[0], setMaxChars = _mc[1];
       var _mt = useState(120), outputChars = _mt[0], setOutputChars = _mt[1];
+      var _ml = useState(true), multiline = _ml[0], setMultiline = _ml[1];   // 多行建议开关
+      var _sw = useState(true), switchEnabled = _sw[0], setSwitchEnabled = _sw[1];   // 是否允许切换建议
+      var _slim = useState(3), switchLimit = _slim[0], setSwitchLimit = _slim[1];   // 最大切换次数
       var _hs = useState(10), historySize = _hs[0], setHistorySize = _hs[1];
       var _sl = useState("auto"), suggestionLanguage = _sl[0], setSuggestionLanguage = _sl[1];
       var _lo = useState(DEFAULT_LANGUAGE_CODES), languageCodes = _lo[0], setLanguageCodes = _lo[1];
@@ -26,9 +43,13 @@
       var _dirty = useState(false), dirty = _dirty[0], setDirty = _dirty[1];
       var _try = useState(null), tryResult = _try[0], setTryResult = _try[1];
       var _copied = useState(""), copiedKey = _copied[0], setCopiedKey = _copied[1];
+      var _ik = useState(""), insertedKey = _ik[0], setInsertedKey = _ik[1];
       var _pause = useState(pausedUntil), pauseState = _pause[0], setPauseState = _pause[1];
       var _theme2 = useState(0), themeTick2 = _theme2[0], setThemeTick2 = _theme2[1];
       var _ver = useState(null), pluginVersion = _ver[0], setPluginVersion = _ver[1];
+      var _upd = useState(""), updateState = _upd[0], setUpdateState = _upd[1];   // "" | "checking"
+      var _dis = useState(readDismissedUpdate()), dismissedVersion = _dis[0], setDismissedVersion = _dis[1];
+      var _updInfo = useState(null), updateInfo = _updInfo[0], setUpdateInfo = _updInfo[1];
       var _undo = useState(null), undoSnapshot = _undo[0], setUndoSnapshot = _undo[1];   // 清空后可撤销的快照
 
       function togglePause() {
@@ -81,6 +102,32 @@
         setUndoSnapshot(null);
         window.dispatchEvent(new CustomEvent("dsh-prompt-predict:run", { detail: { latest: runHistory[0] || null, history: runHistory.slice() } }));
       }
+      // 撤销「忽略」：清掉本机记录，并通知 composer 立刻重新检查（不用重启）。
+      function restoreUpdateNotice() {
+        try { window.localStorage?.removeItem(UPDATE_DISMISS_KEY); } catch { /* 清理失败就算了 */ }
+        setDismissedVersion("");
+        window.dispatchEvent(new CustomEvent("dsh-prompt-predict:update-dismiss-reset"));
+      }
+      // 直接向 npm registry 查 latest（registry 允许跨域），失败就提示网络问题。
+      function checkUpdate() {
+        if (updateState === "checking") return;
+        setUpdateState("checking");
+        setUpdateInfo(null);
+        var controller = new AbortController();
+        var timer = setTimeout(function () { controller.abort(); }, 10000);
+        fetch("https://registry.npmjs.org/dsh-prompt-predict/latest", { signal: controller.signal, cache: "no-store" })
+          .then(function (r) { if (!r || !r.ok) throw new Error("http " + (r && r.status)); return r.json(); })
+          .then(function (j) {
+            var latest = j && typeof j.version === "string" ? j.version : "";
+            if (!latest) throw new Error("bad response");
+            setUpdateInfo(versionNewer(latest, pluginVersion || "0.0.0")
+              ? { status: "found", version: latest }
+              : { status: "latest", version: latest });
+          })
+          .catch(function () { setUpdateInfo({ status: "error" }); })
+          .finally(function () { clearTimeout(timer); setUpdateState(""); });
+      }
+
       function copySuggestion(key, text) {
         var done = function () {
           setCopiedKey(key);
@@ -114,10 +161,13 @@
           setCtxSize(eff.maxMessages || 8);
           setMaxChars(eff.maxChars || 6000);
           setOutputChars(eff.outputChars || 120);
-          setHistorySize(eff.historySize || 10);
+          setMultiline(eff.multilineSuggestions !== false);
+          setSwitchEnabled(eff.switchEnabled !== false);
+          setSwitchLimit(typeof eff.switchLimit === "number" ? eff.switchLimit : 3);
+          setHistorySize(typeof eff.historySize === "number" ? eff.historySize : 10);
           setSuggestionLanguage(normalizeSavedLanguage(eff.suggestionLanguage || "auto"));
           if (Array.isArray(j.languages) && j.languages.length) setLanguageCodes(j.languages);
-          historyLimit = eff.historySize || 10;
+          historyLimit = typeof eff.historySize === "number" ? eff.historySize : 10;
           var stored = trimHistoryToLimit(historyLimit);
           setHistory(stored);
           setEffort(eff.reasoningEffort || "off");
@@ -129,6 +179,15 @@
         }).catch(function (e) { setCatalogError(String(e)); });
       }
       useEffect(function () { loadAll(); }, []);
+
+      // 新配的 provider 不必等缓存过期：手动绕过 Host 的 60s 缓存。
+      function refreshCatalog() {
+        setCatalogError("");
+        api("catalog?refresh=1").then(function (j) {
+          if (j && j.ok) { setCat(j.groups || []); }
+          else setCatalogError((j && j.reason) || tt(t, "settings.catalogFailed"));
+        }).catch(function (e) { setCatalogError(String(e)); });
+      }
 
       // 设置页打开时若已有预测记录，直接显示；之后靠事件实时刷新
       useEffect(function () {
@@ -145,17 +204,18 @@
       // 思考档位跟随所选模型动态生成（模型不支持的档位不出现，避免保存被拒）；
       // 选「跟随当前会话模型」时优先用**该会话实际使用的模型**（st.sessionModel），
       // 拿不到才退回全局默认——否则下拉里的档位可能和真实调用用的模型对不上。
+      // 渲染期解析出实际路由（原语），effect 只依赖它：st 整体变化不再触发重复查询。
+      var effortProvider = provider, effortModel = model;
+      if (effortProvider === "auto" || effortModel === "auto") {
+        var cur0 = (st && (st.sessionModel && st.sessionModel.model ? st.sessionModel : st.current)) || {};
+        effortProvider = cur0.provider; effortModel = cur0.model;
+      }
       useEffect(function () {
-        var p = provider, m = model;
-        if (p === "auto" || m === "auto") {
-          var cur = (st && (st.sessionModel && st.sessionModel.model ? st.sessionModel : st.current)) || {};
-          p = cur.provider; m = cur.model;
-        }
-        if (!p || !m) { setEffortOptions([]); return; }
-        api("efforts?provider=" + encodeURIComponent(p) + "&model=" + encodeURIComponent(m))
-          .then(function (j) { setEffortOptions(j && j.ok && Array.isArray(j.efforts) ? j.efforts : []); })
+        if (!effortProvider || !effortModel) { setEffortOptions([]); return; }
+        getEfforts(effortProvider, effortModel)
+          .then(function (efforts) { setEffortOptions(efforts); })
           .catch(function () { setEffortOptions([]); });
-      }, [provider, model, st]);
+      }, [effortProvider, effortModel]);
 
       // 不可用的 provider 也要列出来：报错可见，但选项禁用，避免误选后保存失败。
       function providerGroups() { return (cat || []).filter(function (g) { return g && g.id; }); }
@@ -172,6 +232,9 @@
           maxMessages: ctxSize,
           maxChars: maxChars,
           outputChars: outputChars,
+          multilineSuggestions: multiline,
+          switchEnabled: switchEnabled,
+          switchLimit: switchLimit,
           historySize: historySize,
           suggestionLanguage: suggestionLanguage,
           reasoningEffort: effort,
@@ -209,10 +272,13 @@
               });
               recordRun(sid, j, null, null);
             } else {
-              setMsg({ ok: false, text: (j && j.reason) || tt(t, "dock.noSuggestion") });
+              // 失败同样写进历史：和普通预测行为一致，排障不用靠猜
+              var tryReason = (j && j.reason) || tt(t, "dock.noSuggestion");
+              setMsg({ ok: false, text: tryReason });
+              recordRun(sid, null, tryReason, null);
             }
           })
-          .catch(function (e) { setMsg({ ok: false, text: String(e) }); })
+          .catch(function (e) { setMsg({ ok: false, text: String(e) }); recordRun(sid, null, String(e), null); })
           .finally(function () { setBusy(false); });
       }
 
@@ -232,14 +298,57 @@
           tt(t, "settings.title"),
           pluginVersion
             ? h("span", { style: SS.version, "data-prompt-predict-version": "true" }, "v" + pluginVersion)
-            : null),
+            : null,
+          h("button", {
+            type: "button",
+            style: Object.assign({}, SS.linkBtn, { marginInlineStart: 8 }),
+            "data-prompt-predict-update-check": "true",
+            disabled: updateState === "checking" || busy || !pluginVersion,   // 版本号未加载前禁用，避免误报
+            onClick: checkUpdate,
+          }, updateState === "checking" ? tt(t, "settings.updateChecking") : tt(t, "settings.checkUpdate"))),
+        updateInfo
+          ? h("p", { style: SS.muted, "data-prompt-predict-update-info": "true" },
+            updateInfo.status === "found"
+              ? h("span", null,
+                h("span", null, tt(t, "settings.updateFound", { version: updateInfo.version })),
+                h("button", {
+                  type: "button",
+                  style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
+                  "data-prompt-predict-update-copy": "true",
+                  onClick: function () { copySuggestion("update-cmd", "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version); },
+                }, copiedKey === "update-cmd" ? tt(t, "settings.updateCopied") : tt(t, "settings.updateCopy")),
+                h("span", { style: { display: "block" } },
+                  tt(t, "settings.updateCommand", { command: "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version })),
+                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updateStep1")),
+                h("span", { style: { display: "block", fontSize: 12 } }, tt(t, "settings.updateStep2")),
+                h("span", { style: { display: "block", fontSize: 12 } }, tt(t, "settings.updateStep3")),
+                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updateOtherEnv")))
+              : updateInfo.status === "latest"
+                ? tt(t, "settings.updateLatest")
+                : tt(t, "settings.updateError"))
+          : null,
+        !updateInfo && dismissedVersion
+          ? h("p", { style: SS.muted, "data-prompt-predict-update-restore": "true" },
+            h("span", null, tt(t, "settings.updateIgnored", { version: dismissedVersion })),
+            h("button", {
+              type: "button",
+              style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
+              "data-prompt-predict-update-restore-btn": "true",
+              onClick: restoreUpdateNotice,
+            }, tt(t, "settings.updateRestore")))
+          : null,
         h("p", { style: SS.muted }, tt(t, "settings.desc")),
+        h("p", {
+          style: Object.assign({}, SS.muted, { fontWeight: 600 }),
+          "data-prompt-predict-save-hint": "true",
+        }, tt(t, "settings.saveHint")),
 
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.enable")),
           h("button", { type: "button", style: SS.toggleTrack(enabled), onClick: function () { toggleEnabled(!enabled); }, disabled: busy, "aria-pressed": enabled },
             h("span", { style: SS.toggleThumb(enabled) })),
           h("span", { style: SS.muted }, enabled ? tt(t, "settings.on") : tt(t, "settings.off"))),
+        h("p", { style: SS.muted }, tt(t, "settings.shortcutHint")),
 
         h("div", { style: SS.divider }),
 
@@ -260,7 +369,11 @@
               return h("option", {
                 key: g.id, value: g.id, disabled: Boolean(g.error),
               }, g.name + "（" + g.id + (g.error ? " · " + tt(t, "settings.providerUnavailableShort") : "") + "）");
-            }))),
+            })),
+          h("button", {
+            type: "button", style: SS.linkBtn, "data-prompt-predict-refresh-models": "true",
+            disabled: busy, onClick: refreshCatalog,
+          }, tt(t, "settings.refreshModels"))),
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.model")),
           h("select", {
@@ -342,6 +455,36 @@
           h(InfoHint, { text: tt(t, "settings.outputCharsHint") + wordHint(suggestionLanguage, outputChars, t), full: tt(t, "settings.outputCharsHintFull") })),
 
         h("div", { style: SS.row },
+          h("span", { style: SS.label }, tt(t, "settings.multiline")),
+          h("button", {
+            type: "button", style: dim(SS.toggleTrack(multiline), !enabled || busy), disabled: !enabled || busy,
+            "data-prompt-predict-multiline": "true", "aria-pressed": multiline,
+            onClick: function () { setMultiline(!multiline); setDirty(true); },
+          }, h("span", { style: SS.toggleThumb(multiline) })),
+          h("span", { style: SS.hintInline }, tt(t, "settings.multilineHint"))),
+
+        h("div", { style: SS.row },
+          h("span", { style: SS.label }, tt(t, "settings.switchEnabled")),
+          h("button", {
+            type: "button", style: dim(SS.toggleTrack(switchEnabled), !enabled || busy), disabled: !enabled || busy,
+            "data-prompt-predict-switch": "true", "aria-pressed": switchEnabled,
+            onClick: function () { setSwitchEnabled(!switchEnabled); setDirty(true); },
+          }, h("span", { style: SS.toggleThumb(switchEnabled) })),
+          h("span", { style: SS.hintInline }, tt(t, "settings.switchEnabledHint"))),
+
+        switchEnabled
+          ? h("div", { style: SS.row },
+            h("span", { style: SS.label }, tt(t, "settings.switchLimit")),
+            h("input", {
+              style: SS.input, type: "number", min: 0, max: 10, step: 1, value: switchLimit,
+              disabled: !enabled || busy,
+              "data-prompt-predict-switch-limit": "true", "aria-label": tt(t, "settings.switchLimit"),
+              onChange: function (e) { setSwitchLimit(Number(e.target.value)); setDirty(true); },
+            }),
+            h("span", { style: SS.hintInline }, tt(t, "settings.switchLimitHint")))
+          : null,
+
+        h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.pause")),
           h("button", {
             type: "button", style: dim(Object.assign({}, SS.btnGhost, { whiteSpace: "nowrap" }), busy), disabled: busy,
@@ -376,7 +519,7 @@
             h("span", { style: SS.muted }, tt(t, "settings.maxCharsHint"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.historySize")),
-            h("input", { style: SS.input, type: "number", min: 1, max: 50, step: 1, value: historySize, "aria-label": tt(t, "settings.historySize"), disabled: !enabled || busy, onChange: function (e) { setHistorySize(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 0, max: 50, step: 1, value: historySize, "aria-label": tt(t, "settings.historySize"), disabled: !enabled || busy, onChange: function (e) { setHistorySize(Number(e.target.value)); setDirty(true); } }),
             h("span", { style: SS.muted }, tt(t, "settings.historySizeHint", { storage: tt(t, storagePlatformKey()) }))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.effort")),
@@ -420,7 +563,9 @@
               onClick: undoClear,
             }, tt(t, "settings.historyUndo")))
           : null,
-        history.length === 0
+        historySize === 0
+          ? h("p", { style: SS.muted }, tt(t, "settings.historyOff"))
+          : history.length === 0
           ? h("p", { style: SS.muted }, tt(t, "settings.historyEmpty"))
           : h("div", null,
             h("p", { style: SS.histHint }, tt(t, "settings.historyHint")),
@@ -446,18 +591,32 @@
                   isOpen
                     ? h("div", { style: SS.histText },
                       h("span", { style: SS.histTextBody }, item.suggestion || tt(t, "settings.historyNoText")),
+                      item.accepted
+                        ? h("span", { style: { flex: "none", color: token("state-success-primary", colors().ok), fontSize: 11.5 }, "data-prompt-predict-accepted": "true" }, tt(t, "settings.historyAccepted"))
+                        : null,
                       item.suggestion
                         ? h("button", {
                           type: "button", style: SS.copyBtn, "data-prompt-predict-history-copy": "true",
                           onClick: function (event) { if (event) event.stopPropagation(); copySuggestion(key, item.suggestion); },
                           onKeyDown: function (event) { if (event) event.stopPropagation(); },
                         }, copiedKey === key ? tt(t, "settings.historyCopied") : tt(t, "settings.historyCopy"))
+                        : null,
+                      item.suggestion
+                        ? h("button", {
+                          type: "button", style: SS.copyBtn, "data-prompt-predict-history-insert": "true",
+                          onClick: function (event) {
+                            if (event) event.stopPropagation();
+                            try { window.dispatchEvent(new CustomEvent("dsh-prompt-predict:insert", { detail: { text: item.suggestion, sessionId: item.sessionId } })); } catch { /* 事件不可用就退化为仅提示 */ }
+                            setInsertedKey(key);
+                          },
+                          onKeyDown: function (event) { if (event) event.stopPropagation(); },
+                        }, insertedKey === key ? tt(t, "settings.historyInserted") : tt(t, "settings.historyInsert"))
                         : null)
                     : null);
               });
             })()),
 
-        h("div", { style: { display: "flex", gap: 10, marginTop: 16 } },
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 } },
           h("button", { style: dim(SS.btnPrimary, busy || !dirty), onClick: save, disabled: busy || !dirty }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
           h("button", { style: dim(SS.btnGhost, busy), onClick: resetDefaults, disabled: busy }, tt(t, "settings.reset")),
           h("button", {

@@ -36,13 +36,14 @@
         title: { fontSize: 15, fontWeight: 600, color: token("label-primary", c.text), margin: "0 0 4px" },
       version: { color: token("label-tertiary", c.muted), fontSize: 11.5, fontWeight: 400, marginInlineStart: 8 },
         muted: { color: token("label-tertiary", c.muted), fontSize: 13, lineHeight: 1.7 },
+        hintInline: { flex: 1, minWidth: 0, color: token("label-tertiary", c.muted), fontSize: 12.5, lineHeight: 1.7 },
         row: { display: "flex", alignItems: "center", gap: 12, margin: "14px 0" },
         label: { width: 110, fontSize: 13, color: token("label-secondary", c.label), flex: "none" },
         select: { flex: 1, padding: "7px 10px", border: "1px solid " + token("border-l1", c.border), borderRadius: 8, fontSize: 13, color: token("label-primary", c.inputText), background: token("bg-base", c.inputBg), maxWidth: 320 },
-        input: { width: 90, padding: "7px 10px", border: "1px solid " + token("border-l1", c.border), borderRadius: 8, fontSize: 13, color: token("label-primary", c.inputText), background: token("bg-base", c.inputBg) },
-        btnPrimary: { padding: "8px 16px", border: 0, borderRadius: 8, background: token("state-business-primary", c.primary), color: c.primaryText, cursor: "pointer", fontSize: 13 },
-        btnGhost: { padding: "8px 16px", border: "1px solid " + token("border-l1", c.border), borderRadius: 8, background: token("bg-layer-2", c.chipBg), color: token("label-primary", c.chipText), cursor: "pointer", fontSize: 13 },
-        toggleTrack: function (on) { return { width: 38, height: 22, borderRadius: 22, border: 0, cursor: "pointer", padding: 2, background: on ? c.primary : c.trackOff, transition: "background .15s" }; },
+        input: { width: 90, flex: "none", padding: "7px 10px", border: "1px solid " + token("border-l1", c.border), borderRadius: 8, fontSize: 13, color: token("label-primary", c.inputText), background: token("bg-base", c.inputBg) },
+        btnPrimary: { padding: "8px 16px", flex: "none", border: 0, borderRadius: 8, background: token("state-business-primary", c.primary), color: c.primaryText, cursor: "pointer", fontSize: 13 },
+        btnGhost: { padding: "8px 16px", flex: "none", border: "1px solid " + token("border-l1", c.border), borderRadius: 8, background: token("bg-layer-2", c.chipBg), color: token("label-primary", c.chipText), cursor: "pointer", fontSize: 13 },
+        toggleTrack: function (on) { return { width: 38, height: 22, borderRadius: 22, border: 0, cursor: "pointer", padding: 2, flex: "none", boxSizing: "border-box", overflow: "hidden", background: on ? c.primary : c.trackOff, transition: "background .15s" }; },
         toggleThumb: function (on) { return { display: "block", width: 18, height: 18, borderRadius: 18, background: c.thumb, transform: on ? "translateX(16px)" : "translateX(0)", transition: "transform .15s" }; },
         warn: { color: c.warn, fontSize: 12.5, lineHeight: 1.7, margin: "-8px 0 0 122px" },
         warnBlock: { color: c.warn, fontSize: 12.5, lineHeight: 1.7, margin: "-4px 0 12px" },
@@ -51,12 +52,12 @@
         tryMeta: { display: "block", color: c.muted, fontSize: 11.5, marginTop: 4 },
         sectionTitle: { fontSize: 13, fontWeight: 600, color: token("label-secondary", c.label), margin: "0 0 8px" },
         histHead: { display: "flex", alignItems: "baseline", gap: 10, margin: "0 0 6px" },
-        histToggle: { background: "none", border: 0, color: token("state-business-primary", c.link), fontSize: 12, cursor: "pointer", padding: 0 },
+        histToggle: { flex: "none", background: "none", border: 0, color: token("state-business-primary", c.link), fontSize: 12, cursor: "pointer", padding: 0 },
         histHint: { color: token("label-tertiary", c.muted), fontSize: 12, lineHeight: 1.7, margin: "0 0 6px" },
-        linkBtn: { background: "none", border: 0, color: c.link, fontSize: 12, cursor: "pointer", padding: "0 4px", textDecoration: "underline" },
+        linkBtn: { flex: "none", background: "none", border: 0, color: c.link, fontSize: 12, cursor: "pointer", padding: "0 4px", textDecoration: "underline" },
         hintWithMore: { color: token("label-tertiary", c.muted), fontSize: 13, lineHeight: 1.7, cursor: "help", borderBottom: "1px dotted " + c.hintBorder },
         // 悬停详情用浮层：不占布局（行高不变），也不接收鼠标事件（不会挡住下面控件的点击）
-        hintAnchor: { position: "relative", display: "inline-block" },
+        hintAnchor: { position: "relative", display: "inline-block", flex: "0 1 auto", minWidth: 0 },
         hintDetail: {
           // 提示文字贴在行尾，气泡从**右边缘**向左扩展，避免越过卡片右边被裁掉
           position: "absolute", top: "calc(100% + 6px)", insetInlineEnd: 0, zIndex: 30,
@@ -78,7 +79,7 @@
         err: { color: token("state-error-primary", c.err), fontSize: 12, marginTop: 8 },
         ok: { color: token("state-success-primary", c.ok), fontSize: 12, marginTop: 8 },
         divider: { borderTop: "1px solid " + token("border-l1", c.divider), margin: "16px 0" },
-        advBtn: { background: "none", border: 0, color: token("state-business-primary", c.link), fontSize: 13, cursor: "pointer", padding: 0 },
+        advBtn: { flex: "none", background: "none", border: 0, color: token("state-business-primary", c.link), fontSize: 13, cursor: "pointer", padding: 0 },
       };
     }
     var SS = buildStyles();
@@ -185,23 +186,93 @@
       return scoped || document.querySelector('[data-composer-input="true"]');
     }
 
+    // composer 的外层容器：附件预览、工具栏通常在这一层，而不是可编辑节点内部。
+    function findComposerScope(sessionId) {
+      var ed = findEditor(sessionId);
+      if (!ed) return null;
+      try {
+        return (typeof ed.closest === "function" && ed.closest('[class*="composer"], [data-composer]')) || ed.parentElement || ed;
+      } catch { return ed.parentElement || ed; }
+    }
+
     // 编辑器里「用户已经写了的东西」。rc.2 起 slot 拿不到草稿，只能读 DOM：
     // 占位符是编辑器的兄弟节点（见上面 hidePlaceholder 的查找方式），所以不会混进来。
-    function editorText(sessionId) {
+    function readEditableText(node) {
+      if (!node) return "";
       try {
-        var ed = findEditor(sessionId);
-        if (!ed) return "";
-        var raw = typeof ed.textContent === "string" ? ed.textContent : String(ed.innerText || "");
-        return raw.replace(/[\u200b\u00a0\s]/g, "");
+        if (typeof node.value === "string") return node.value;
+        if (node.shadowRoot && typeof node.shadowRoot.textContent === "string") return node.shadowRoot.textContent;
+        var text = typeof node.textContent === "string" ? node.textContent : "";
+        if (!text && typeof node.innerText === "string") text = node.innerText;
+        return text;
       } catch { return ""; }
     }
-    // 只把「不是我们采纳插入的那部分」当成用户草稿——逐段采纳后编辑器里本来就有前缀
-    function hasForeignDraft(sessionId, acceptedPrefix) {
-      var text = editorText(sessionId);
-      if (!text) return false;
-      var prefix = String(acceptedPrefix || "").replace(/[\u200b\u00a0\s]/g, "");
-      if (!prefix) return true;
-      return text.indexOf(prefix) !== 0;
+    function editorText(sessionId) {
+      try {
+        var nodes = [];
+        var ed = findEditor(sessionId);
+        if (ed) nodes.push(ed);
+        // 焦点可能落在嵌套的可编辑节点/隐藏 textarea 上
+        var active = document.activeElement;
+        if (active && active !== ed && (active.isContentEditable || (ed.contains && ed.contains(active)))) nodes.push(active);
+        // 光标所在的 contenteditable（Lexical 的真实正文往往在这里）
+        try {
+          var sel = document.getSelection ? document.getSelection() : null;
+          var anchor = sel && sel.anchorNode;
+          var el = anchor ? (anchor.nodeType === 1 ? anchor : anchor.parentElement) : null;
+          var host = el && el.closest ? el.closest('[contenteditable="true"], [data-lexical-editor="true"]') : null;
+          if (host && nodes.indexOf(host) < 0) nodes.push(host);
+        } catch { /* 选区不可用 */ }
+        for (var i = 0; i < nodes.length; i += 1) {
+          var raw = readEditableText(nodes[i]);
+          if (!raw && nodes[i] && nodes[i].querySelector) {
+            var inner = nodes[i].querySelector('[contenteditable="true"], textarea, [data-lexical-editor="true"]');
+            if (inner) raw = readEditableText(inner);
+          }
+          if (raw) return raw.replace(/[\u200b\u00a0\s]/g, "");
+        }
+        return "";
+      } catch { return ""; }
+    }
+    // 图片/附件/文件卡片同样算「输入框里有内容」，否则插件会以为空输入框、
+    // 把 ghost 画在附件上（删除附件后看起来像文字重叠）。
+    function editorHasAttachments(sessionId) {
+      try {
+        var ed = findEditor(sessionId);
+        if (!ed) return false;
+        var notButton = function (el) {
+          if (!el || !el.closest) return Boolean(el);
+          return !el.closest('button, [role="button"], [type="button"]');
+        };
+        // 编辑器内部：图片/媒体节点就算
+        var coreSelector = "img, picture, figure, video, canvas, [data-image], [data-attachment], [data-file], [data-lexical-decorator]";
+        if (typeof ed.querySelector === "function") {
+          var direct = ed.querySelector(coreSelector);
+          if (direct && notButton(direct)) return true;
+        }
+        // 没有 querySelector 的环境（或节点未挂载）用 innerHTML 兜底；只认媒体/装饰标记
+        var html = typeof ed.innerHTML === "string" ? ed.innerHTML : "";
+        if (html) {
+          if (/<(img|picture|figure|video|canvas)\b/i.test(html)) return true;
+          if (/data-lexical-decorator|contenteditable="false"/i.test(html)) return true;
+        }
+        // 编辑器外部：只认明确带附件标记的卡片，绝不把工具栏图标当附件
+        var root = findComposerScope(sessionId);
+        var chipSelector = "[data-attachment], [data-file], [data-image], [data-lexical-decorator], [class*=\"attachment-card\"], [class*=\"image-preview\"], [class*=\"file-chip\"], [class*=\"attachment-chip\"]";
+        var roots = [ed, root];
+        for (var i = 0; i < roots.length; i += 1) {
+          var node = roots[i];
+          if (!node || typeof node.querySelector !== "function") continue;
+          var chip = node.querySelector(chipSelector);
+          if (chip && notButton(chip)) return true;
+        }
+        return false;
+      } catch { return false; }
+    }
+    // 编辑器里有任何文字/附件就算「已有内容」，此时不显示建议。
+    function hasForeignDraft(sessionId) {
+      if (editorHasAttachments(sessionId)) return true;
+      return Boolean(editorText(sessionId));
     }
 
     // 快捷键只能在当前 composer 聚焦时接管；否则 Tab 应该正常用于焦点移动。

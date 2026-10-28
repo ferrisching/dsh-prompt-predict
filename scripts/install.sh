@@ -5,6 +5,7 @@
 #   bash scripts/install.sh <profile 目录>   # 装进指定 profile
 #
 # 幂等：可重复运行。脚本会现场打包本仓库、安装进 profile 的 node_modules，并接线 bundles。
+# 安装前会自动检查 App 是否仍在运行——在跑会直接报错退出（升级/安装都会改写正在使用的 node_modules）。
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,6 +16,23 @@ fail(){ printf '错误：%s\n' "$*" >&2; exit 1; }
 
 [ -f "$REPO_DIR/package.json" ] || fail "找不到 $REPO_DIR/package.json"
 [ -d "$PROFILE" ] || fail "找不到 DSH profile：$PROFILE（先启动过一次 DeepSeek Harness，或显式传入 profile 目录）"
+
+# App 运行中安装会改写正在使用的 node_modules：pnpm 可能卡住或留下半装状态（实测）。
+# 先探测主进程（排除 --type= 的 renderer/gpu 等辅助进程），在跑就直接报错退出。
+APP_MAIN="/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness"
+app_running=0
+while IFS= read -r line; do
+  case "$line" in
+    *"$APP_MAIN"*)
+      case "$line" in
+        *"--type="*) ;;                 # 辅助进程，忽略
+        *) app_running=1 ;;
+      esac ;;
+  esac
+done < <(ps -axo args= 2>/dev/null)
+if [ "$app_running" -eq 1 ]; then
+  fail "检测到 DeepSeek Harness 正在运行。请先完全退出 App（Cmd+Q）再执行安装，否则可能卡住或留下半装状态"
+fi
 
 # 优先用 DSH 自带的 node / pnpm，找不到再退回 PATH
 NODE_BIN=""; PNPM_BIN=""

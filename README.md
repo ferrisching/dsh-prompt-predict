@@ -21,7 +21,7 @@
 </div>
 
 <div align="center">
-  <img alt="Preview: after each reply a gray suggestion appears; ↻ for another one, Alt+→ to accept piece by piece, Tab to accept" src="https://raw.githubusercontent.com/ferrisching/dsh-prompt-predict/main/docs/demo.gif" width="760" />
+  <img alt="Preview: after each reply a gray suggestion appears; ↻ for another one, Tab to accept" src="https://raw.githubusercontent.com/ferrisching/dsh-prompt-predict/main/docs/demo.gif" width="760" />
 </div>
 
 `dsh-prompt-predict` is a [DeepSeek Harness](https://www.deepseek.com/) plugin: after every assistant turn it predicts **the message you are most likely to type next** and floats it into the composer as gray ghost text. The suggestion never enters the editor — only pressing `Tab` inserts it, and even then it stays undoable — so a wrong prediction costs you nothing.
@@ -42,8 +42,9 @@
 
 ## ✨ Features
 
+- **Single-line or multi-line** — sentences stay one line; code snippets, lists and multi-paragraph replies keep their line breaks and indentation
 - **A suggestion the moment a reply ends** — gray ghost text rendered at the composer's first character, matching the editor's caret position, font size and line height
-- **Four interactions** — `Tab` to accept, `Alt+→` to accept piece by piece, `↻` for a different suggestion, `Esc` to dismiss; typing hides it, and clearing the draft brings it back
+- **Three interactions** — `Tab` to accept, `↻` (or `↓`) for a different suggestion, `Esc` to dismiss; typing hides it, and clearing the draft brings it back
 - **Lightweight context** — only the most recent user/assistant *text*; tool results, attachments and system prompts never leave your machine
 - **Follows the current session model by default** — nothing is hard-coded to a provider, the prediction call reuses whatever model the session itself uses; you can also pin a cheaper model
 - **No repeats, no dead ends** — a repeat of the previous suggestion triggers an automatic "give me a different one"; a reasoning level the real model doesn't support falls back automatically, so you never hit "settings look fine but no suggestion ever appears"
@@ -63,10 +64,18 @@ The plugin is published on npm. Options are ordered by convenience.
 **Or the dsh CLI** — pin any published version with pnpm's `@version` syntax:
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.8
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.9
 ```
 
 Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build), then **restart DSH**.
+
+**Upgrade to the latest release**
+
+```bash
+dsh plugin --profile desktop add dsh-prompt-predict@latest
+```
+
+From a source checkout, `bash scripts/update.sh [profile]` does the same and also converges the lockfile; it refuses to run while the app is still up — quit it first. The settings page also has a **Check for updates** button next to the version; it detects the running environment (desktop app / web build) and pre-fills the profile in the update command. The composer also checks automatically once per session and shows a dismissible notice when a newer version exists (dismissal is remembered per version, and the settings page can restore a dismissed notice with one click — no localStorage digging).
 
 > ⚠️ **The CLI only installs the package.** DSH loads a plugin only when it is also listed in
 > `dsh.profile.bundles` inside `~/.dsh/profiles/<profile>/package.json`. Verified: with the package
@@ -83,8 +92,8 @@ tarball that is on npm (`shasum` matches the registry), which is handy for offli
 pinning an artifact you can verify:
 
 ```bash
-gh release download v0.2.8 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.8.tgz
+gh release download v0.2.9 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.9.tgz
 ```
 
 Same caveat as the CLI route above: add `"dsh-prompt-predict"` to `dsh.profile.bundles` yourself,
@@ -96,6 +105,7 @@ or run `scripts/install.sh` instead.
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
 bash scripts/install.sh
+# make sure the app is fully quit first (Cmd+Q) — the script refuses to run while it is up
 ```
 
 The script packs this repo on the fly, installs it into the profile's `node_modules`, and adds `dsh-prompt-predict` to `dsh.profile.bundles`. The default target is `~/.dsh/profiles/desktop`; for another profile:
@@ -132,8 +142,10 @@ Then open that profile's `package.json` and add `"dsh-prompt-predict"` to the `d
 | Action | Effect |
 |---|---|
 | `Tab` | Accept the whole thing while the composer is focused (only now is it inserted, and it stays undoable) |
-| `Alt+→` | **Accept piece by piece** — a couple of characters at a time in CJK, one word in Latin; the rest keeps floating, stop whenever you like |
 | `↻` (button on the right) | **Reroll** — ask the model for a different suggestion |
+| `↓` | Generate the next suggestion (counts toward *Max switches*); if this round already has later suggestions, move forward through them for free. With no suggestion showing and an empty composer it fetches one immediately. `Ctrl/⌘+↓` works as a fallback |
+| `↑` | Return to the previous suggestion in this round (free) |
+| `Ctrl/⌘+Shift+Space` | Trigger a prediction by hand; rerolls when one is already showing |
 | `Esc` | Dismiss this one |
 | Just start typing | It disappears; **clearing the draft brings it back** (only `Esc` is a permanent dismissal) |
 
@@ -151,10 +163,13 @@ Suggestions only appear when the composer is empty and the session isn't running
 | Context size (advanced) | Small 3 / Standard 8 / Large 12 messages | Standard 8 |
 | Context budget (advanced) | Character cap sent to the helper call, 1000–20000 | 6000 |
 | Output length | How long a suggestion should be, in **characters** (20–400) — no token maths. Pinning a Latin-script language also shows the equivalent in words; CJK stays in characters because word segmentation is undefined there. The host derives a generous token safety cap from it (per language) and writes the character budget into the prompt; a reply that still gets cut is retried with more room and marked **cut off · raise the output length** | 120 |
+| Keep multi-line formatting | Allow code snippets/lists to keep line breaks and indentation (off = always one line) | On |
+| Switchable suggestions | When on, ↓ generates the next suggestion and ↑ returns to the previous one (kept in this round's history); off disables arrow switching and the ↻ button | On |
+| Max switches | Max new suggestions generated per round (0–10; `0` = unlimited). Moving back with ↑ does not count | 3 |
 | Reasoning effort (advanced) | Options are **generated from the model actually in use** (the session's model when following it); unsupported levels never appear | Off (fastest, cheapest) |
 | Suggestion language | `Auto` follows the conversation; pin a language and every suggestion is written in it. 14 mainstream languages are listed up front, the rest fold behind **More languages…**, and languages with regional variants get a second **Region** dropdown: Simplified Chinese (Mainland China / Singapore / Malaysia), Traditional Chinese (Taiwan / Hong Kong), English (US / UK / Australia / Canada), Portuguese (Brazil / Portugal), Spanish (Spain / Latin America (neutral) / Mexico / Argentina / Colombia), French (France / Canada), German (Germany / Austria / Switzerland), Dutch (Netherlands / Belgium). The chosen variant is named explicitly in the prompt (e.g. *Traditional Chinese (Taiwan)*, *British English*) | Auto |
 | Pause | Stops predictions for ten minutes with a countdown, then resumes automatically; the deadline survives a reload | Off |
-| History size (advanced) | How many recent predictions the settings page keeps (1–50). Records live in the app's own local storage — the Electron renderer's storage in the desktop app, the page's `localStorage` on web — and are never uploaded | 10 |
+| History size (advanced) | How many recent predictions the settings page keeps (0–50; `0` turns history off). Records live in the app's own local storage — the Electron renderer's storage in the desktop app, the page's `localStorage` on web — and are never uploaded | 10 |
 
 The bottom of the settings page shows a **recent predictions** list (default 10, adjustable): time, session, model, latency, and whether the reasoning level was auto-downgraded, a reroll happened, the suggestion was truncated by the output cap, or the call failed (with the reason). The list stays folded to the newest run (`▸ Show all` opens the rest), the newest run's suggestion text is expanded by default, and clicking a row's `▸` expands that run's text while collapsing the previous one. Records live in the app's own local storage (the Electron renderer's storage on desktop, the page's `localStorage` on web) and are never uploaded. No more guessing why nothing appeared.
 
@@ -223,7 +238,8 @@ npm test        # 71 cases: 51 host-side + 20 client render smoke tests
 │   ├── predict.mjs      51 cases: trimming, cleanup, route inheritance, settings validation, degrade-retry, dedup, bilingual errors, HTTP end-to-end
 │   └── client-render.mjs  20 cases: renders the ghost overlay and settings page through a tiny React stand-in, incl. both locales and dictionary self-checks
 ├── scripts/
-│   └── install.sh       One-shot install / upgrade
+│   ├── install.sh       One-shot install from a local pack
+│   └── update.sh        Upgrade a profile to the npm latest
 ├── cordis.patch.yml     Plugin mount patch
 └── package.json
 ```
