@@ -26,10 +26,8 @@
       var _dt = useState(0), draftTick = _dt[0], setDraftTick = _dt[1];
       var _theme = useState(0), themeTick = _theme[0], setThemeTick = _theme[1];
       var _fail = useState(failState), failure = _fail[0], setFailure = _fail[1];
-      var _notice = useState(null), updateNotice = _notice[0], setUpdateNotice = _notice[1];   // 自动更新提示（版本号）
       var _me = useState(""), manualError = _me[0], setManualError = _me[1];   // 手动换一条失败的原因
       var _mk = useState("failed"), manualErrorKind = _mk[0], setManualErrorKind = _mk[1];
-      var currentVersionRef = useRef(null);   // 状态接口拿到的当前版本，供恢复提示时重新比较
       var _en = useState(true), enabled = _en[0], setEnabled = _en[1];
       var _swi = useState(true), switchEnabled = _swi[0], setSwitchEnabled = _swi[1];
       var switchLimitRef = useRef(3);
@@ -199,17 +197,6 @@
           if (j && j.effective && typeof j.effective.historySize === "number") {
             historyLimit = j.effective.historySize;
             trimHistoryToLimit(historyLimit);
-          }
-          // 自动更新检查：拿到当前版本后查一次 registry；发现新版且未忽略过 → 显示提示
-          if (j && j.version) currentVersionRef.current = String(j.version);
-          if (j && j.version && Date.now() - readLastUpdateCheck() > UPDATE_CHECK_INTERVAL) {
-            markUpdateChecked();
-            var current = String(j.version);
-            fetchLatestVersion().then(function (latest) {
-              if (latest && versionNewer(latest, current) && readDismissedUpdate() !== latest) {
-                setUpdateNotice(latest);
-              }
-            }).catch(function () { /* 网络问题静默，不打扰用户 */ });
           }
         }).catch(function () { });
       }, [sessionId]);
@@ -602,19 +589,6 @@
         };
       }, []);
 
-      // 设置页「恢复提示」→ 立刻重新查 registry，满足条件就把提示弹回来
-      useEffect(function () {
-        var onReset = function () {
-          fetchLatestVersion().then(function (latest) {
-            if (latest && versionNewer(latest, currentVersionRef.current || "0")) {
-              setUpdateNotice(latest);
-            }
-          }).catch(function () { /* 网络问题静默 */ });
-        };
-        window.addEventListener("dsh-prompt-predict:update-dismiss-reset", onReset);
-        return function () { window.removeEventListener("dsh-prompt-predict:update-dismiss-reset", onReset); };
-      }, []);
-
       // 因为「有草稿就不预测」会直接 return，草稿被清空后需要重新触发一次。
       // rc.2 没有 draft 可订阅，只能监听编辑器的输入事件，发现变空就 bump 一下。
       useEffect(function () {
@@ -825,21 +799,6 @@
       if (!dockBody && pausedUntil > pauseNow) {
         dockBody = h(ComposerHint, { sessionId: sessionId, text: tt(t, "dock.paused", { time: formatLeft(pausedUntil - pauseNow) }), t: t });
       }
-      if (!updateNotice) return dockBody;
-      // 自动更新提示：一行版本 + 已按环境填好的命令，可忽略（按版本记本机，不重复烦人）
-      return h("div", null,
-        h("div", {
-          "data-prompt-predict-update-notice": "true",
-          style: { fontSize: 12, lineHeight: 1.7, marginBottom: 2, color: colors().muted },
-        },
-          h("span", null, tt(t, "settings.updateFound", { version: updateNotice })),
-          h("button", {
-            type: "button", "data-prompt-predict-update-dismiss": "true",
-            style: { background: "none", border: 0, color: colors().muted, fontSize: 12, cursor: "pointer", padding: "0 4px", textDecoration: "underline" },
-            onClick: function () { setDismissedUpdate(updateNotice); setUpdateNotice(null); },
-          }, tt(t, "ghost.dismiss")),
-          h("span", { style: { display: "block", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" } },
-            "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateNotice)),
-        dockBody);
+      return dockBody;
     }
 
