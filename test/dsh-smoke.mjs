@@ -74,7 +74,7 @@ const llm = createServer((req, res) => {
     const predict = /Conversation so far|Predict the user's next message|prompt-prediction/i.test(text);
     const reroll = /Give a DIFFERENT suggestion/i.test(text);
     rerollCount += reroll ? 1 : 0;
-    const rerollText = rerollCount === 1 ? '换个思路：先补测试再实现' : '第二版建议：先补测试再实现';
+    const rerollText = rerollCount === 1 ? '换个思路：先补测试再实现' : `第${rerollCount}版建议：先补测试再实现`;
     const multiline = /MULTILINE_CODE/.test(text);
     const codeText = '```js\nfunction demo() {\n  return 42;\n}\n```';
     const answer = predict ? (multiline ? codeText : (reroll ? rerollText : '先补测试再实现')) : '已完成。';
@@ -184,6 +184,13 @@ const pressTab = async () => {
   }
 };
 const focusEditor = () => evalInPage(`document.querySelector('[contenteditable="true"]')?.focus()`);
+const pressArrow = async (key, code, vk) => {
+  for (const type of ['keyDown', 'keyUp']) {
+    await send('Input.dispatchKeyEvent', {
+      type, key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk,
+    });
+  }
+};
 
 await waitFor(() => evalInPage(`!!document.querySelector('[contenteditable="true"]')`), { timeout: 20000 });
 // 首次启动有「预览版说明 → 继续」引导，先关掉
@@ -237,8 +244,19 @@ await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'B
 await waitFor(async () => Boolean((await state()).ghost), { timeout: 10000 });
 const beforeReroll = (await state()).ghost;
 await evalInPage(`(() => { const b=[...document.querySelectorAll('button')].find((x)=>x.textContent.trim()==='↻'); b?.click(); })()`);
-await waitFor(async () => { const s2 = await state(); return s2.ghost && s2.ghost !== beforeReroll; }, { timeout: 10000 });
+await waitFor(async () => { const s2 = await state(); return s2.ghost && s2.ghost !== beforeReroll && !/^正在生成/.test(s2.ghost); }, { timeout: 10000 });
 check('真实 DSH：reroll 后 ghost 换成新建议', true, `${beforeReroll} -> ${(await state()).ghost}`);
+
+// ↓ 生成下一条、↑ 回到上一条（本轮历史）
+const afterReroll = (await state()).ghost;
+await focusEditor();
+await pressArrow('ArrowDown', 'ArrowDown', 40);
+await waitFor(async () => { const s3 = await state(); return s3.ghost && s3.ghost !== afterReroll && !/^正在生成/.test(s3.ghost); }, { timeout: 10000 });
+const afterDown = (await state()).ghost;
+check('真实 DSH：↓ 生成下一条建议', true, `${afterReroll} -> ${afterDown}`);
+await pressArrow('ArrowUp', 'ArrowUp', 38);
+await waitFor(async () => (await state()).ghost === afterReroll, { timeout: 5000 });
+check('真实 DSH：↑ 回到上一条建议', true, `${afterDown} -> ${(await state()).ghost}`);
 
 // 暂停事件：隐藏 ghost；恢复后重新预测
 await evalInPage(`(() => {

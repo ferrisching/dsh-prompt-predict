@@ -49,6 +49,7 @@
       var _ver = useState(null), pluginVersion = _ver[0], setPluginVersion = _ver[1];
       var _upd = useState(""), updateState = _upd[0], setUpdateState = _upd[1];   // "" | "checking"
       var _updInfo = useState(null), updateInfo = _updInfo[0], setUpdateInfo = _updInfo[1];
+      var _aue = useState(false), autoUpdateError = _aue[0], setAutoUpdateError = _aue[1];
       var _undo = useState(null), undoSnapshot = _undo[0], setUndoSnapshot = _undo[1];   // 清空后可撤销的快照
 
       function togglePause() {
@@ -179,8 +180,9 @@
         if (Date.now() - readLastUpdateCheck() < UPDATE_CHECK_INTERVAL) return;
         markUpdateChecked();
         fetchLatestVersion().then(function (latest) {
+          setAutoUpdateError(false);
           if (latest && versionNewer(latest, pluginVersion)) setUpdateInfo({ status: "found", version: latest });
-        }).catch(function () { /* 网络问题静默 */ });
+        }).catch(function () { setAutoUpdateError(true); });
       }, [pluginVersion]);
 
       // 新配的 provider 不必等缓存过期：手动绕过 Host 的 60s 缓存。
@@ -309,6 +311,9 @@
             disabled: updateState === "checking" || busy || !pluginVersion,   // 版本号未加载前禁用，避免误报
             onClick: checkUpdate,
           }, updateState === "checking" ? tt(t, "settings.updateChecking") : tt(t, "settings.checkUpdate"))),
+        autoUpdateError && !updateInfo
+          ? h("p", { style: SS.muted, "data-prompt-predict-update-auto-error": "true" }, tt(t, "settings.updateAutoFailed"))
+          : null,
         updateInfo
           ? h("p", { style: SS.muted, "data-prompt-predict-update-info": "true" },
             updateInfo.status === "found"
