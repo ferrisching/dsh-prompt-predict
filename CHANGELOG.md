@@ -6,6 +6,39 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.9] — 2026-10-28
+
+### Added
+
+- **Multi-line suggestions.** Code snippets, lists and multi-paragraph text keep their line breaks and indentation; a settings toggle turns this off for single-line-only users.
+- **Switchable suggestions with round history.** Settings gained *Switchable suggestions* and *Max switches*: when enabled, ↓ generates the next suggestion and keeps it in this round's history, ↑ returns to the previous one (free), and at the configured limit (0–10, `0` = unlimited) ↓ stops generating. Turning the switch off disables ↓/↑ and hides the ↻ button.
+- **One-at-a-time regeneration.** One suggestion per request; pressing ↓ (or `Ctrl/⌘+↓`) asks for a fresh single suggestion, clearing the old one immediately and showing a "generating…" placeholder while it waits.
+- **Manual trigger & discoverability.** `Ctrl/⌘+Shift+Space` triggers a prediction by hand; and settings lists the shortcuts.
+- **Actionable failure hint.** Failures can open the plugin settings when the host exposes that capability, or copy the "Settings → Prompt prediction" path.
+- **Refresh the model list.** A *Refresh* button bypasses the Host's 60-second catalog cache.
+- **History improvements.** Accepting a suggestion marks that history entry "Accepted"; each row gained an **Insert** button; *History size* `0` disables local history entirely.
+- **Pause is visible in the composer**, with a live "resumes in mm:ss" hint.
+- **Slow-request feedback.** A muted "generating…" placeholder appears if no event has arrived after 900 ms and disappears on the first delta.
+- **Paste fallbacks.** The plugin never intercepts paste; if the editor ignores a paste, it retries the write itself (event-level and `Cmd/Ctrl+V`-level).
+- **Update checks and upgrades.** Settings shows the latest npm version with copyable upgrade steps (profile pre-filled from the running environment); the composer checks once per session with a dismissible notice; a one-click restore brings a dismissed notice back. `scripts/update.sh` upgrades a profile from npm and refuses to run while the app is open.
+
+### Changed
+
+- **Back to one suggestion per request.** The multi-candidate experiment and its per-round limit/cache were removed; ↓ simply regenerates the next single suggestion.
+- **Pasted images/files count as composer content.** A paste or drop containing files marks the composer as non-empty immediately (independently of DOM detection), so no suggestion is generated and ↓ does not request one; the flag clears when the message is sent.
+- **Attachment changes around the composer clear the ghost.** The composer and its parent container are observed for image/attachment nodes being added or removed, and placeholder text is hidden in the editor's ancestors while the ghost is visible — so deleting a pasted image cannot leave ghost text on top of a placeholder.
+- **Composer text detection is more robust** (caret host, focused editable, nested editables, shadow DOM). A `MutationObserver` clears the ghost when an image/attachment appears or is deleted; other edits re-render so a typed draft hides it and clearing the draft brings it back.
+- **Settings layout is shrink-proof**: toggles, inputs and buttons cannot be squeezed by long hints.
+
+### Fixed
+
+- **Injected DSH messages no longer flip the suggestion language (#2).** `recentMessages()` now ignores `role: "user"` messages whose `source.kind` is not `user` (time-context, skill-catalog, agent-instructions), so they neither vote in language detection nor occupy the prediction context. Legacy messages without `source` still count.
+- **Update-check false positives and duplicate checks**; "Test now" failures are recorded in history; fewer re-renders and re-fetches (title-only subscriptions, 5-minute efforts cache).
+- **Safer failure text** (URLs/tokens redacted), **prompt-injection hardening** (`<conversation>` framing), and **head+tail trimming** for oversized messages.
+- **IME composition is tracked explicitly**, late results can no longer paint over a typed/pasted draft, and arrow-key keyups are not counted as typing.
+- **Attachment detection ignores toolbar icons**, and image/file chips are treated as composer content.
+- **`install.sh` refuses to run while the app is open**, matching `update.sh`.
+
 ## [0.2.8] — 2026-10-24
 
 ### Added
@@ -14,18 +47,16 @@ All notable changes to this project are documented here. The format follows
 
 - **NDJSON streaming on the Host.** `POST /dsh-prompt-predict/suggest` with `stream: true` now returns `application/x-ndjson` events (`start`, `delta`, `reset`, `done`, `error`), while requests without `stream` keep the existing single-JSON response. `predictNextPrompt` gained an `onDelta` callback; retries emit `reset` before streaming the replacement.
 
+- **Accessibility pass**: the reroll/truncation controls now have accessible names, every settings select and numeric input has an `aria-label`, pause exposes `aria-pressed`, advanced exposes `aria-expanded`, and history rows are keyboard-operable buttons with `aria-expanded`.
+
+- **Optional real-DSH smoke test** (`npm run test:smoke`): disposable profile + local mock LLM + headless Edge/CDP, covering ghost display, composer focus scoping, reroll and pause.
+
 ### Changed
 
 - **Compatibility verified on DSH `0.2.1-rc.3`** (the installed desktop build and the current nightly feed), not just `0.2.1-rc.2`.
 - **History rows are now a real `<button>`** with the copy control as a sibling, instead of a `role=button` container; keyboard and screen-reader semantics are cleaner.
 - **NDJSON deltas are coalesced every 40 ms** on the Host, with a forced flush before `reset`, `done` and `error`, so fast models no longer produce one event per token.
 - **The client source is split into `client/src/` fragments**, assembled into the single `client/client.js` by `npm run build:client` (`pretest` / `prepack` run it automatically). The generated bundle is byte-identical; behaviour is unchanged.
-
-### Added
-
-- **Accessibility pass**: the reroll/truncation controls now have accessible names, every settings select and numeric input has an `aria-label`, pause exposes `aria-pressed`, advanced exposes `aria-expanded`, and history rows are keyboard-operable buttons with `aria-expanded`.
-
-- **Optional real-DSH smoke test** (`npm run test:smoke`): disposable profile + local mock LLM + headless Edge/CDP, covering ghost display, composer focus scoping, reroll and pause.
 
 ### Fixed
 

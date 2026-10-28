@@ -75,7 +75,9 @@ const llm = createServer((req, res) => {
     const reroll = /Give a DIFFERENT suggestion/i.test(text);
     rerollCount += reroll ? 1 : 0;
     const rerollText = rerollCount === 1 ? '换个思路：先补测试再实现' : '第二版建议：先补测试再实现';
-    const answer = predict ? (reroll ? rerollText : '先补测试再实现') : '已完成。';
+    const multiline = /MULTILINE_CODE/.test(text);
+    const codeText = '```js\nfunction demo() {\n  return 42;\n}\n```';
+    const answer = predict ? (multiline ? codeText : (reroll ? rerollText : '先补测试再实现')) : '已完成。';
     llmCalls.push({ predict, reroll, at: Date.now() });
     if (String(req.url).endsWith('/chat/completions')) {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
@@ -166,7 +168,13 @@ const evalInPage = async (expression) => {
 const state = () => evalInPage(`(() => {
   const ed = document.querySelector('[contenteditable="true"]');
   const g = document.querySelector('[data-prompt-predict-ghost]');
-  return { text: ed && ed.textContent, ghost: g ? g.innerText.split('\\n')[0] : null };
+  const gt = g && g.querySelector('[data-prompt-predict-text]');
+  return { text: ed && ed.textContent, ghost: gt ? gt.textContent : null };
+})()`);
+const ghostSuggestion = () => evalInPage(`(() => {
+  const g = document.querySelector('[data-prompt-predict-ghost]');
+  const span = g && g.querySelector('[data-prompt-predict-text]');
+  return span ? span.textContent : null;
 })()`);
 const pressTab = async () => {
   for (const type of ['keyDown', 'keyUp']) {
@@ -246,6 +254,33 @@ await evalInPage(`(() => {
 })()`);
 await waitFor(async () => Boolean((await state()).ghost), { timeout: 10000 });
 check('真实 DSH：恢复后重新出现 ghost', true);
+
+// 多行代码预测：再发一条带标记的消息，mock 对这次预测返回代码块
+await focusEditor();
+await send('Input.insertText', { text: 'MULTILINE_CODE 给我一段示例代码' });
+await evalInPage(`document.querySelector('button[aria-label="发送消息"]')?.click()`);
+await waitFor(async () => {
+  const t = await ghostSuggestion();
+  return Boolean(t && t.includes('function demo()'));
+}, { timeout: 20000 });
+const codeGhost = await ghostSuggestion();
+check('真实 DSH：多行代码建议保留换行与缩进',
+  codeGhost === 'function demo() {\n  return 42;\n}',
+  JSON.stringify(codeGhost));
+
+await focusEditor();
+await pressTab();
+await sleep(1000);
+const editorAfterCode = await evalInPage(`(() => {
+  const ed = document.querySelector('[contenteditable="true"]');
+  return ed ? { text: ed.textContent, inner: ed.innerText } : null;
+})()`);
+check('真实 DSH：Tab 采纳多行代码后换行/缩进进入编辑器',
+  Boolean(editorAfterCode)
+  && /function demo\(\)/.test(editorAfterCode.text)
+  && /return 42/.test(editorAfterCode.text)
+  && /\n\s*return 42/.test(editorAfterCode.inner || editorAfterCode.text),
+  JSON.stringify(editorAfterCode).slice(0, 300));
 
 check('mock LLM 至少收到 2 次预测请求', llmCalls.filter((c) => c.predict).length >= 2, String(llmCalls.length));
 

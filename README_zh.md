@@ -21,7 +21,7 @@
 </div>
 
 <div align="center">
-  <img alt="效果演示：回复结束后输入框浮现灰色建议，↻ 换一条、Alt+→ 逐段采纳、Tab 采纳" src="https://raw.githubusercontent.com/ferrisching/dsh-prompt-predict/main/docs/demo.gif" width="760" />
+  <img alt="效果演示：回复结束后输入框浮现灰色建议，↻ 换一条、Tab 采纳" src="https://raw.githubusercontent.com/ferrisching/dsh-prompt-predict/main/docs/demo.gif" width="760" />
 </div>
 
 `dsh-prompt-predict` 是一个 [DeepSeek Harness](https://www.deepseek.com/) 插件：每轮助手回复结束后，它根据当前会话预测你**下一句最可能输入什么**，并以灰色 ghost text 的形式浮在输入框里。整条建议不写进编辑器，只有按下 `Tab` 采纳时才真正插入（可撤销），因此误预测零成本。
@@ -42,8 +42,10 @@
 
 ## ✨ 功能一览
 
+- **单行/多行都支持**：普通句子保持单行；代码片段、列表、多段文本会保留换行与缩进
+
 - **回复结束即出建议**：在输入框首字符处浮出灰色 ghost text，光标位置、字号、行高都对齐当前编辑器
-- **四种交互**：`Tab` 采纳 · `Alt+→` 逐段采纳 · `↻` 换一条 · `Esc` 忽略；开始输入自动消失，把草稿删空它还会回来
+- **三种交互**：`Tab` 采纳 · `↻`（或 `↓`）换一条 · `Esc` 忽略；开始输入自动消失，把草稿删空它还会回来
 - **轻量上下文**：只取最近若干条 user/assistant 的纯文本，工具结果、附件、系统提示一律不进辅助调用
 - **默认跟随当前会话模型**：不写死任何提供商，联想调用沿用会话自身选用的模型；也可以在设置页固定到某个更便宜的模型
 - **不会复读、不会卡死**：连续两轮撞车时自动要求换一条；思考档位与真实模型不兼容时自动降级重试，不会出现「设置都对但永远没建议」
@@ -63,10 +65,18 @@
 **或者用 dsh CLI**——想装某个已发布版本就用 pnpm 的 `@版本` 语法：
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.8
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.9
 ```
 
 `--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`），**装完重启 DSH 生效**。
+
+**升级到最新版**
+
+```bash
+dsh plugin --profile desktop add dsh-prompt-predict@latest
+```
+
+如果用的是源码仓库，`bash scripts/update.sh [profile]` 会做同样的事并同时收敛 lock；App 仍在运行时会直接拒绝执行——先退出 App 再用。设置页版本号旁也有「检查更新」按钮，会按运行环境（桌面 App / Web 构建）在更新命令里自动填好 profile。 composer 每个会话还会自动检查一次，发现新版时在输入框上方显示可关闭的提示；忽略按版本记本机，设置页可一键「恢复提示」，不用去清 localStorage。
 
 > ⚠️ **CLI 只负责装包。** DSH 只有在 `~/.dsh/profiles/<profile>/package.json` 的
 > `dsh.profile.bundles` 里也列出该插件时才会加载它。实测：包装了但不在该列表里，插件路由返回 `404`，
@@ -81,8 +91,8 @@ dsh plugin --profile desktop add dsh-prompt-predict@0.2.8
 **完全一致**的 tarball（`shasum` 与 registry 相同），适合离线机器或需要自行校验产物的场景：
 
 ```bash
-gh release download v0.2.8 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.8.tgz
+gh release download v0.2.9 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.9.tgz
 ```
 
 与上面 CLI 路径同样的注意点：请自己把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles`，
@@ -94,6 +104,7 @@ dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.8.tgz
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
 bash scripts/install.sh
+# 先确认 App 已完全退出（Cmd+Q）——App 在运行时脚本会拒绝执行
 ```
 
 脚本会现场打包本仓库、装进 profile 的 `node_modules`，并把 `dsh-prompt-predict` 接进 `dsh.profile.bundles`。默认目标是 `~/.dsh/profiles/desktop`，装别的 profile：
@@ -130,9 +141,11 @@ pnpm add /path/to/dsh-prompt-predict
 | 操作 | 效果 |
 |---|---|
 | `Tab` | 输入框聚焦时整条采纳（此刻才插入输入框，可撤销） |
-| `Alt+→` | **逐段采纳**：一次填一小段（中文 2 字、英文 1 词），剩下的继续浮动，随时可停 |
 | `↻`（点右侧按钮） | **换一条**：让模型给一条不同的建议 |
 | `Esc` | 忽略这条 |
+| `↓` | 生成下一条建议（计入「最大切换次数」）；本轮已有后续建议时则免费前进。没有建议且输入框为空时直接拉一条。纯 ↓ 被系统/输入法吞掉时可用 `Ctrl/⌘+↓` |
+| `↑` | 回到本轮的上一条建议（免费） |
+| `Ctrl/⌘+Shift+Space` | 手动触发一次预测；已有建议时等同换一条 |
 | 直接开始打字 | 建议消失；**把草稿删空它还会回来**（只有 `Esc` 是永久忽略） |
 
 建议只在输入框为空、且当前会话不在运行中时出现；切换会话、中断回复都会清掉旧建议。
@@ -149,10 +162,13 @@ pnpm add /path/to/dsh-prompt-predict
 | 上下文规模（高级） | 少 3 条 / 标准 8 条 / 多 12 条 | 标准 8 条 |
 | 上下文预算（高级） | 送进辅助调用的字符上限，1000–20000 | 6000 |
 | 字数上限 | 建议写多长，按**字符**算（20–400），不用换算 token；选了英文/俄文等拉丁语言时会附带「约 N 个单词」的参考（中文/日文按字，不做词数换算）。Host 会按语言推导一个宽裕的 token 安全网，并把字数预算写进提示词；仍被截断时自动放宽重试，ghost 上会标 **已截断 · 建议调高字数上限** | 120 |
+| 保留多行格式 | 允许代码/列表保留换行与缩进；关闭后一律单行 | 开启 |
+| 可切换提示词 | 开启后 ↓ 生成下一条、↑ 回到上一条（保留本轮历史）；关闭后方向键不切换，↻ 按钮也隐藏 | 开启 |
+| 最大切换次数 | 每轮最多生成几条新建议（0–10，`0` = 不限）；↑ 回看不计入 | 3 |
 | 思考深度（高级） | 选项**按真实使用的模型动态生成**（跟随会话时按会话模型），模型不支持的档位不会出现 | 关闭（最快最省） |
 | 建议语言 | `自动` 跟随对话；也可固定成某种语言。下拉先列 14 种主流语言，其余收进「更多语言…」；带地区变体的语言会多出**地区**下拉：简体中文（中国大陆/新加坡/马来西亚）、繁體中文（台灣/香港）、English（美/英/澳/加）、Português（巴西/葡萄牙）、Español（西班牙/拉丁美洲（中性）/墨西哥/阿根廷/哥伦比亚）、Français（法國/加拿大）、Deutsch（德國/奧地利/瑞士）、Nederlands（荷蘭/比利時）。每个列表第一项就是该语言的默认地区，不再有含糊的「通用」。选中的变体会明确写进提示词（如 *Traditional Chinese (Taiwan)*、*British English*） | 自动 |
 | 暂停预测 | 停止预测十分钟并显示倒计时，到点自动恢复；截止时间刷新后仍有效 | 关闭 |
-| 记录条数（高级） | 设置页保留最近多少次预测记录（1–50）。记录存在应用自身的 `localStorage`（桌面端是 Electron 渲染层存储，Web 端是页面 localStorage；都只在本机、不上传） | 10 |
+| 记录条数（高级） | 设置页保留最近多少次预测记录（0–50，`0` = 关闭历史）。记录存在应用自身的 `localStorage`（桌面端是 Electron 渲染层存储，Web 端是页面 localStorage；都只在本机、不上传） | 10 |
 
 设置页底部是**最近预测**列表（默认 10 条，可调）：时间、**哪个会话**、所用模型、耗时，以及是否自动降级了思考档位 / 换过一条 / 被输出上限截断，失败时直接显示原因；列表默认只显示最新一条（`▸ 展开全部` 看其余），最新一条原文默认展开，点其它行的 `▸` 会展开它并自动收起上一条；记录存在应用自身的 `localStorage`（桌面端是 Electron 渲染层，Web 端是页面存储），不会上传——联想出问题时不必靠猜。
 
@@ -221,7 +237,8 @@ npm test        # 71 项：51 项 Host 端 + 20 项客户端渲染冒烟
 │   ├── predict.mjs      51 项用例：文本裁剪、建议清洗、路由继承、设置校验、降级重试、去重、双语错误、接口端到端
 │   └── client-render.mjs  20 项用例：极简 React 替身渲染 ghost 覆盖层与设置页，含中英双语与词典自检
 ├── scripts/
-│   └── install.sh       一键安装 / 升级
+│   ├── install.sh       一键安装 / 升级
+│   └── update.sh        把 profile 升级到 npm 最新版
 ├── cordis.patch.yml     插件挂载补丁
 └── package.json
 ```

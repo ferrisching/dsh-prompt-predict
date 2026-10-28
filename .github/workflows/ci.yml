@@ -26,4 +26,4 @@ jobs:
         run: npm test
 
       - name: Check shell script syntax
-        run: bash -n scripts/install.sh
+        run: bash -n scripts/install.sh && bash -n scripts/update.sh
