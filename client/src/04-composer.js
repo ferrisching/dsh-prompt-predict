@@ -148,9 +148,15 @@
           setSuggestion("");
           setTruncated(false);
           var reason = event.reason || tt(t, isReroll ? "dock.rerollFailed" : "dock.noSuggestion");
+          // 会话已不存在（删除/关闭标签/新建会话尚未注册）：静默停用，不弹失败提示。
+          if (event.code === "session_not_found" || /session.*(not found|不存在)/i.test(String(reason))) {
+            setManualError("");
+            armed.current = false;
+            return;
+          }
           if (manual) { setManualError(reason); setManualErrorKind("failed"); }
           noteFailure(sessionId, reason);
-          recordRun(sessionId, null, reason, sessionTitle, { partialChars: event.partialChars });
+          recordRun(sessionId, null, reason, sessionTitle, { partialChars: event.partialChars, diagnostics: event.diagnostics });
         }
       };
       var endBusy = function () {
@@ -749,6 +755,7 @@
         if (failure && failure.streak >= 2 && failure.sessionId === sessionId && !typedSince.current && !hasForeignDraft(sessionId)) {
           dockBody = h(ComposerHint, {
             sessionId: sessionId,
+            below: true,
             text: tt(t, "dock.failureHint", { reason: String(failure.reason || "").slice(0, 80) }),
             t: t,
             actionLabel: findSettingsOpener()
@@ -797,7 +804,7 @@
       }
       // 暂停时的常驻提示：否则用户会以为插件坏了
       if (!dockBody && pausedUntil > pauseNow) {
-        dockBody = h(ComposerHint, { sessionId: sessionId, text: tt(t, "dock.paused", { time: formatLeft(pausedUntil - pauseNow) }), t: t });
+        dockBody = h(ComposerHint, { sessionId: sessionId, below: true, text: tt(t, "dock.paused", { time: formatLeft(pausedUntil - pauseNow) }), t: t });
       }
       return dockBody;
     }
