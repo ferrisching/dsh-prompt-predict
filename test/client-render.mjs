@@ -1581,6 +1581,26 @@ check('设置页列出最近预测（含会话标题）',
   fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 }
 
+// 会话已不存在：静默停用，不弹失败提示
+{
+  fetchResult = { ok: false, code: 'session_not_found', reason: 'Session 不存在' };
+  const inst = setup();
+  const C = inst.registered['conversation.composer.dock'].Component;
+  let running = false;
+  const view = mount(inst.react, C, () => ({
+    sessionId: 'session-stale',
+    useSession: (sel) => sel({ running, blank: false, removed: false, title: '旧会话' }),
+    useInput: (sel) => sel({}),
+    inputActions: { captureInsertion: () => ({}), insertText: () => true },
+  }));
+  await view.settle(3);
+  running = true; view.render(); await view.settle(3);
+  running = false; view.render(); await view.settle(3);
+  check('Session 不存在时静默、不显示失败提示',
+    find(view.tree, (n) => n.props && n.props['data-prompt-predict-hint'] === 'true').length === 0, '');
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
 // 修复 5：连续失败时在 composer 里给一行提示（以前是彻底静默）
 {
   const inst = setup();
@@ -1600,6 +1620,8 @@ check('设置页列出最近预测（含会话标题）',
   running = true; view.render(); await view.settle(3);
   running = false; view.render(); await view.settle(3);
   check('连续两次失败后出现提示', hasHint() && /模型调用超时/.test(textOf(view.tree)), textOf(view.tree).slice(-60));
+  const hintNode = find(view.tree, (n) => n.props && n.props['data-prompt-predict-hint'] === 'true')[0];
+  check('失败提示渲染在输入框下方（不压占位符）', Number(hintNode?.props?.style?.top) >= 240, String(hintNode?.props?.style?.top));
   const hintAction = find(view.tree, (n) => n.props && n.props['data-prompt-predict-hint-action'] === 'true')[0];
   check('失败提示带「复制设置路径」动作', Boolean(hintAction) && /复制设置路径/.test(textOf(view.tree)), textOf(view.tree).slice(-60));
   let actionThrew = false;

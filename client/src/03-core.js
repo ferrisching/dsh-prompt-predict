@@ -232,6 +232,7 @@
         suggestion: (result && typeof result.suggestion === "string" && result.suggestion.trim()) || null,
         error: error ? redactErrorText(error) : null,
         partialChars: extra && typeof extra.partialChars === 'number' ? extra.partialChars : null,
+        diagnostics: extra && extra.diagnostics && typeof extra.diagnostics === 'object' ? extra.diagnostics : null,
       };
       // 以已落盘的那份为准再插队：dock 与设置页可能是两个模块实例，
       // 各自内存里的 runHistory 会互相覆盖，丢记录的根源就在这里。
@@ -276,6 +277,17 @@
         var failed = tt(t, "run.failedShort", { reason: String(item.error).slice(0, 80) });
         if (typeof item.partialChars === "number" && item.partialChars > 0) {
           failed += " · " + tt(t, item.partialChars === 1 ? "run.partialCharsOne" : "run.partialChars", { count: item.partialChars });
+        }
+        var diag = item.diagnostics;
+        if (diag && typeof diag === "object") {
+          var bits = [];
+          if (diag.finishKind) bits.push("finish=" + diag.finishKind);
+          if (diag.hasFinish === false) bits.push("no-finish");
+          if (typeof diag.textChars === "number") bits.push("text=" + diag.textChars);
+          if (typeof diag.reasoningChars === "number" && diag.reasoningChars > 0) bits.push("reasoning=" + diag.reasoningChars);
+          var types = Object.keys(diag.chunks || {}).filter(function (type) { return type !== "finish"; });
+          if (types.length) bits.push(types.map(function (type) { return type + "×" + diag.chunks[type]; }).join(", "));
+          if (bits.length) failed += " · " + bits.join(" · ");
         }
         return failed;
       }
@@ -508,11 +520,14 @@
         var cs = getComputedStyle(ed);
         var padLeft = parseFloat(cs.paddingLeft || "0") || 0;
         var padRight = parseFloat(cs.paddingRight || "0") || 0;
+        var scope = findComposerScope(sessionId);
+        var box = scope && typeof scope.getBoundingClientRect === "function" ? scope.getBoundingClientRect() : null;
         setPos({
           left: r.left + padLeft,
           top: r.top + parseFloat(cs.paddingTop || "0"),
           width: r.width > 0 ? Math.max(80, r.width - padLeft - padRight) : 0,
           height: r.height || 0,
+          bottom: box && box.height ? box.top + box.height : r.top + (r.height || 0),
           fontFamily: cs.fontFamily, fontSize: cs.fontSize,
         });
       }, [sessionId]);
@@ -534,7 +549,7 @@
         "data-prompt-predict-hint": "true",
         dir: "auto",
         style: {
-          position: "fixed", left: pos.left, top: pos.top + (props.below ? (pos.height || 0) + 4 : 0), zIndex: 60,
+          position: "fixed", left: pos.left, top: props.below ? pos.bottom + 4 : pos.top, zIndex: 60,
           width: pos.width || undefined, pointerEvents: "none",
           fontFamily: pos.fontFamily, fontSize: pos.fontSize,
           color: colors().warn, whiteSpace: "pre-wrap", overflowWrap: "anywhere",

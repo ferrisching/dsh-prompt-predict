@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.11] — 2026-11-04
+
+### Added
+
+- **Failure diagnostics for empty suggestions.** Failed runs now record `finish.kind`, whether a `finish` event arrived, per-chunk-type counts, and text/reasoning character counts; Settings shows a compact summary in the history row, so an empty result can be traced to an empty stop, a missing finish, a tool-call-only stream, or reasoning-only output.
+- **Compatible with full-text chunks.** If a provider sends the whole text as a `text`/`content` block instead of `text-delta`, the plugin now uses it.
+- **Automatic retry for an empty stop.** A `finish=stop` result with no text is retried once with a smaller context and no reasoning effort before it is recorded as a failure.
+
+### Fixed
+
+- **Stale sessions stop producing a failure hint.** When the Host answers `session_not_found` (deleted/closed session, a not-yet-registered new conversation, or a stale tab after a restart), the client now silences the prediction and re-arms on the next session instead of showing "Session does not exist".
+- **Failure and pause hints no longer overlap the composer.** They render below the whole composer container instead of on top of the editor/placeholder; long failure text wraps there.
+
 ## [0.2.10] — 2026-10-28
 
 ### Changed

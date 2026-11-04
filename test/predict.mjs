@@ -80,6 +80,8 @@ let multilineNext = false; // 下一次正文返回代码块（测多行开关�
 let failAfterDeltaCount = 0; // 先吐半句再抛错（次数）
 let truncateNext = false;  // 让下一次调用返回「被输出上限截断」的半句
 let emptyTruncateNext = false;  // 让下一次调用返回「空正文 + max-tokens」
+let emptyStopCount = 0;   // 接下来 N 次返回「空正文 + stop」
+let fullTextNext = false; // 下一次把完整正文放在 text 块（不是 text-delta）
 const fakeSession = {
   id: 'session-test',
   requestHeader: () => ({ config: { provider: 'provider-current', model: 'model-current' } }),
@@ -107,6 +109,17 @@ const fakeCtx = {
         failAfterDeltaCount -= 1;
         yield { type: 'text-delta', text: '半句' };
         throw new Error('mock mid-stream failure');
+      }
+      if (emptyStopCount > 0) {
+        emptyStopCount -= 1;
+        yield { type: 'finish', reason: { kind: 'stop' } };
+        return;
+      }
+      if (fullTextNext) {
+        fullTextNext = false;
+        yield { type: 'text', text: '"全量文本建议"' };
+        yield { type: 'finish', reason: { kind: 'stop' } };
+        return;
       }
       if (multilineNext) {
         multilineNext = false;
@@ -271,6 +284,10 @@ check('字数上限直接进提示词、token 上限由语言推导',
   /within about 120 characters/.test(captured.system ?? '') && captured.maxTokens === 456 && byChars.tokenCap === 456,
   `budget=${(captured.system.match(/within about \d+ characters/) || [''])[0]} maxTokens=${captured.maxTokens}`);
 
+// 空正文：记录 finish/chunk 诊断，并自动用小上下文重试一次
+fullTextNext = true;
+const fullTextRun = await predictNextPrompt(fakeCtx, { ...fakeSession, id: 'session-fulltext' });
+check('兼容 text 块形式的完整正文', fullTextRun.suggestion === '全量文本建议', JSON.stringify(fullTextRun));
 // Host 路由端到端（本地 HTTP）
 let route;
 let cleaned = false;
@@ -280,7 +297,7 @@ const ctx = {
     if (id === 'session-test') return fakeSession;
     if (id === 'session-dedupe') return fakeSession2;
     if (id === 'session-widen') return fakeSession3;
-    if (id === 'session-near' || id === 'session-stream' || id === 'session-stream-retry' || id === 'session-stream-coalesce' || id === 'session-multiline' || id === 'session-stream-error' || id === 'session-prefix' || /^session-lru-\d+$/.test(id)) return { ...fakeSession, id };
+    if (id === 'session-empty-retry' || id === 'session-empty-error' || id === 'session-fulltext' || id === 'session-near' || id === 'session-stream' || id === 'session-stream-retry' || id === 'session-stream-coalesce' || id === 'session-multiline' || id === 'session-stream-error' || id === 'session-prefix' || /^session-lru-\d+$/.test(id)) return { ...fakeSession, id };
     return undefined;
   } },
   llm: fakeCtx.llm,
@@ -343,9 +360,29 @@ const swBad = await request('/dsh-prompt-predict/settings', 'POST', { switchLimi
 check('切换上限越界被拒', swBad.json.ok === false && /0–10|0-10/.test(String(swBad.json.reason)), String(swBad.json.reason));
 await request('/dsh-prompt-predict/settings', 'POST', { switchEnabled: true, switchLimit: 3 });
 const suggestion = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
+const missing = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-does-not-exist' });
+check('未知会话返回 session_not_found 代码',
+  missing.status === 404 && missing.json.code === 'session_not_found', JSON.stringify(missing.json));
 check('建议接口返回预测', suggestion.status === 200 && suggestion.json.suggestion === '继续，直接实现并安装插件', JSON.stringify(suggestion.json));
 check('建议响应带上会话标识', suggestion.json.sessionId === 'session-test', String(suggestion.json.sessionId));
 check('默认跟随当前会话模型', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);
+emptyStopCount = 1;
+const emptyCallsBefore = streamCalls.length;
+const emptyRetryRes = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-empty-retry' });
+check('空正文会自动降级重试一次',
+  emptyRetryRes.json.ok === true && emptyRetryRes.json.emptyRetry === true
+  && streamCalls.length - emptyCallsBefore >= 2,
+  `ok=${emptyRetryRes.json.ok} emptyRetry=${emptyRetryRes.json.emptyRetry} calls=${streamCalls.length - emptyCallsBefore}`);
+emptyStopCount = 2;
+const emptyFailRes = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-empty-error' });
+check('重试后仍空时返回 finish/chunk 诊断',
+  emptyFailRes.json.ok === false
+  && emptyFailRes.json.diagnostics?.finishKind === 'stop'
+  && emptyFailRes.json.diagnostics?.hasFinish === true
+  && emptyFailRes.json.diagnostics?.textChars === 0
+  && emptyFailRes.json.diagnostics?.chunks?.finish >= 1,
+  JSON.stringify(emptyFailRes.json.diagnostics));
+
 
 const ndjson = await requestRaw('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-stream', stream: true });
 const events = ndjson.body.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
