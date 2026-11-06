@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
-## [Unreleased]
+## [0.2.12] — 2026-11-06
 
 ### Changed
 
