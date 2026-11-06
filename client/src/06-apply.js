@@ -12,6 +12,12 @@
           localeService = ctx.locale;      // currentLang() 要读它的快照
         }
       } catch { /* 保持中文 */ }
+      try {
+        var navigation = typeof ctx.get === "function" ? ctx.get("pluginNavigation") : null;
+        if (navigation && typeof navigation.openBundle === "function") {
+          pluginPageOpener = function () { navigation.openBundle("dsh-prompt-predict"); };
+        }
+      } catch { /* 旧运行时没有插件页导航 */ }
       ctx.slots.inject("conversation.composer.dock", function () {
         return ctx.slots.register({
           name: "conversation.composer.dock",

@@ -319,12 +319,21 @@
             updateInfo.status === "found"
               ? h("span", null,
                 h("span", null, tt(t, "settings.updateFound", { version: updateInfo.version })),
+                pluginPageOpener
+                  ? h("button", {
+                    type: "button",
+                    style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6, fontWeight: 600 }),
+                    "data-prompt-predict-open-plugins": "true",
+                    onClick: pluginPageOpener,
+                  }, tt(t, "settings.updateOpenPlugins"))
+                  : null,
                 h("button", {
                   type: "button",
                   style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
                   "data-prompt-predict-update-copy": "true",
                   onClick: function () { copySuggestion("update-cmd", "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version); },
                 }, copiedKey === "update-cmd" ? tt(t, "settings.updateCopied") : tt(t, "settings.updateCopy")),
+                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updatePluginsHint")),
                 h("span", { style: { display: "block" } },
                   tt(t, "settings.updateCommand", { command: "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version })),
                 h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updateStep1")),

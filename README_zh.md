@@ -76,7 +76,7 @@ dsh plugin --profile desktop add dsh-prompt-predict@0.2.11
 dsh plugin --profile desktop add dsh-prompt-predict@latest
 ```
 
-如果用的是源码仓库，`bash scripts/update.sh [profile]` 会做同样的事并同时收敛 lock；App 仍在运行时会直接拒绝执行——先退出 App 再用。设置页版本号旁有「检查更新」按钮，打开设置页时也会自动检查一次（10 分钟内不重复）；会按运行环境（桌面 App / Web 构建）在更新命令里自动填好 profile。更新提示只出现在设置页，输入框下方不再有横幅。
+如果用的是源码仓库，`bash scripts/update.sh [profile]` 会做同样的事并同时收敛 lock；App 仍在运行时会直接拒绝执行——先退出 App 再用。设置页版本号旁有「检查更新」按钮，打开设置页时也会自动检查一次（10 分钟内不重复）。发现新版时会直接指向 **DSH 侧边栏 → Plugins → Installed plugins → dsh-prompt-predict → Versions → Update**，由 DSH 负责下载、回滚和重启；同时保留可复制的命令行作为兜底。更新提示只出现在设置页，输入框下方不再有横幅。
 
 > ⚠️ **CLI 只负责装包。** DSH 只有在 `~/.dsh/profiles/<profile>/package.json` 的
 > `dsh.profile.bundles` 里也列出该插件时才会加载它。实测：包装了但不在该列表里，插件路由返回 `404`，
