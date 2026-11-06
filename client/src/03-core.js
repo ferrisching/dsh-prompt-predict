@@ -8,6 +8,7 @@
       try { return window.localStorage?.getItem(LIVE_SESSION_KEY) || null; } catch { return undefined; }
     }
     var liveSessionId = readLiveSessionId() || null;
+    var pluginPageOpener = null;   // DSH Plugins 页导航（旧运行时没有）
     function currentLiveSessionId() {
       var stored = readLiveSessionId();
       // undefined = 存储不可用；此时保留本模块内存里的值，不清掉它。

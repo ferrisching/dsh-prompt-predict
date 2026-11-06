@@ -7,6 +7,10 @@
 
 ## [未发布]
 
+### 变更
+
+- **更新提示指向 DSH Plugins 页。** 发现新版时设置页提供「在 DSH Plugins 页更新」（通过 `pluginNavigation.openBundle`），直接打开该插件的 Versions 页，由 DSH 执行更新并提示重启；可复制的命令行保留为兜底。
+
 ### 修复
 
 - **ghost 跟随当前 composer。** 页面存在多个 `[data-composer-input]`（隐藏/离屏编辑器）时，现在按会话范围、焦点和是否在视口内打分，而不是取第一个节点，建议不会再画到页面底部；没有可见/聚焦编辑器时不渲染 ghost。

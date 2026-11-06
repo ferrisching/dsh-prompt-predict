@@ -105,6 +105,8 @@ window.__ModuleLoader__.load({
         "settings.updateStep2": "2. 在终端执行上面的命令（profile 已按当前环境填好；自定义 profile 请自行替换）",
         "settings.updateStep3": "3. 重新打开 App 生效；仅客户端改动时刷新窗口即可",
         "settings.updateOtherEnv": "如需在另一个环境也安装，把命令中的 profile 换成另一个（desktop ↔ web）后重复执行。",
+        "settings.updateOpenPlugins": "在 DSH Plugins 页更新",
+        "settings.updatePluginsHint": "打开 DSH 侧边栏 → Plugins → Installed plugins → dsh-prompt-predict → Versions → Update；下面的命令是兜底方案。",
         "settings.updateCopy": "复制命令",
         "settings.updateCopied": "已复制",
         "settings.updateError": "检查失败：无法访问 registry.npmjs.org",
@@ -245,6 +247,8 @@ window.__ModuleLoader__.load({
         "settings.updateStep2": "2. Run the command above in a terminal (profile pre-filled for this environment; replace it if you use a custom profile)",
         "settings.updateStep3": "3. Reopen the app; client-only changes only need a window reload",
         "settings.updateOtherEnv": "To install in the other environment too, repeat the command with the other profile (desktop ↔ web).",
+        "settings.updateOpenPlugins": "Update in DSH Plugins",
+        "settings.updatePluginsHint": "Open the DSH sidebar → Plugins → Installed plugins → dsh-prompt-predict → Versions → Update. The command below is a fallback.",
         "settings.updateCopy": "Copy command",
         "settings.updateCopied": "Copied",
         "settings.updateError": "Check failed: cannot reach registry.npmjs.org",
@@ -781,6 +785,7 @@ window.__ModuleLoader__.load({
       try { return window.localStorage?.getItem(LIVE_SESSION_KEY) || null; } catch { return undefined; }
     }
     var liveSessionId = readLiveSessionId() || null;
+    var pluginPageOpener = null;   // DSH Plugins 页导航（旧运行时没有）
     function currentLiveSessionId() {
       var stored = readLiveSessionId();
       // undefined = 存储不可用；此时保留本模块内存里的值，不清掉它。
@@ -2474,12 +2479,21 @@ window.__ModuleLoader__.load({
             updateInfo.status === "found"
               ? h("span", null,
                 h("span", null, tt(t, "settings.updateFound", { version: updateInfo.version })),
+                pluginPageOpener
+                  ? h("button", {
+                    type: "button",
+                    style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6, fontWeight: 600 }),
+                    "data-prompt-predict-open-plugins": "true",
+                    onClick: pluginPageOpener,
+                  }, tt(t, "settings.updateOpenPlugins"))
+                  : null,
                 h("button", {
                   type: "button",
                   style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
                   "data-prompt-predict-update-copy": "true",
                   onClick: function () { copySuggestion("update-cmd", "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version); },
                 }, copiedKey === "update-cmd" ? tt(t, "settings.updateCopied") : tt(t, "settings.updateCopy")),
+                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updatePluginsHint")),
                 h("span", { style: { display: "block" } },
                   tt(t, "settings.updateCommand", { command: "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version })),
                 h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updateStep1")),
@@ -2799,6 +2813,12 @@ window.__ModuleLoader__.load({
           localeService = ctx.locale;      // currentLang() 要读它的快照
         }
       } catch { /* 保持中文 */ }
+      try {
+        var navigation = typeof ctx.get === "function" ? ctx.get("pluginNavigation") : null;
+        if (navigation && typeof navigation.openBundle === "function") {
+          pluginPageOpener = function () { navigation.openBundle("dsh-prompt-predict"); };
+        }
+      } catch { /* 旧运行时没有插件页导航 */ }
       ctx.slots.inject("conversation.composer.dock", function () {
         return ctx.slots.register({
           name: "conversation.composer.dock",

@@ -290,7 +290,7 @@ function makeLocale(lang) {
 }
 
 /** 挂载插件：返回注册到的组件与注入的 ctx。 */
-function setup(localeService, sharedEnv) {
+function setup(localeService, sharedEnv, extraCtx) {
   const client = loadClient(localeService, sharedEnv);
   const registered = {};
   client.exports.apply({
@@ -299,6 +299,7 @@ function setup(localeService, sharedEnv) {
       register: (meta, Component) => ({ meta, Component }),
     },
     ...(localeService ? { locale: localeService } : {}),
+    ...(extraCtx || {}),
   });
   return { ...client, registered };
 }
@@ -821,6 +822,24 @@ check('设置页列出最近预测（含会话标题）',
   check('独立 settings 实例能调用当前会话的「试一下」',
     body?.sessionId === 'session-smoke' && /先补测试再实现/.test(textOf(settingsView.tree)),
     JSON.stringify(body));
+}
+
+// 有 pluginNavigation 时，更新提示直接跳到 DSH Plugins 页
+{
+  registryVersion = '9.9.10';
+  let opened = null;
+  const inst = setup(null, null, {
+    get: (name) => (name === 'pluginNavigation'
+      ? { openBundle: (name) => { opened = name; } }
+      : undefined),
+  });
+  const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await view.settle(6);
+  const open = find(view.tree, (n) => n.props && n.props['data-prompt-predict-open-plugins'] === 'true')[0];
+  check('更新提示提供「在 DSH Plugins 页更新」入口', Boolean(open), textOf(view.tree).slice(0, 80));
+  open?.props?.onClick?.();
+  check('点击后打开 dsh-prompt-predict 的 Plugins 页', opened === 'dsh-prompt-predict', String(opened));
+  registryVersion = '9.9.9';
 }
 
 // 自动检查失败时给出可重试提示
