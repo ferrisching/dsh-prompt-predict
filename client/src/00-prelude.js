@@ -9,6 +9,7 @@ window.__ModuleLoader__.load({
     var useEffect = React.useEffect;
     var useRef = React.useRef;
     var useCallback = React.useCallback;
+    var useLayoutEffect = React.useLayoutEffect || React.useEffect;
 
     var name = "dsh-prompt-predict";
     var inject = ["slots", "locale"];

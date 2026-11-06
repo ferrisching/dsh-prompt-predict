@@ -181,6 +181,58 @@
       window.dispatchEvent(new CustomEvent("dsh-prompt-predict:settings", { detail: effective }));
     }
 
+    // 祖先若有 transform/filter/contain/perspective，会成为 position:fixed 的包含块，
+    // 让 fixed 坐标变成相对该祖先。返回需要从视口坐标里减掉的偏移。
+    function fixedPositionOffset(el) {
+      var node = el && el.parentElement;
+      while (node && node !== document.body && node !== document.documentElement) {
+        var cs;
+        try { cs = getComputedStyle(node); } catch { cs = null; }
+        var willChange = cs && cs.willChange ? cs.willChange : "";
+        if (cs && ((cs.transform && cs.transform !== "none")
+          || (cs.filter && cs.filter !== "none")
+          || (cs.perspective && cs.perspective !== "none")
+          || /paint|layout|strict|content/.test(cs.contain || "")
+          || /transform|perspective|filter/.test(willChange))) {
+          try {
+            var r = node.getBoundingClientRect();
+            return { x: r.left, y: r.top };
+          } catch { return { x: 0, y: 0 }; }
+        }
+        node = node.parentElement;
+      }
+      return { x: 0, y: 0 };
+    }
+
+    // 真正的「可见」：display/visibility/opacity、祖先隐藏、以及中心点是否真的命中它。
+    function isActuallyVisible(el) {
+      if (!el || typeof el.getBoundingClientRect !== "function") return false;
+      var r;
+      try { r = el.getBoundingClientRect(); } catch { return false; }
+      var right = typeof r.right === "number" ? r.right : r.left + r.width;
+      var bottom = typeof r.bottom === "number" ? r.bottom : r.top + r.height;
+      if (!(r.width > 0 && r.height > 0 && bottom > 0 && right > 0
+        && r.top < (window.innerHeight || 800) && r.left < (window.innerWidth || 1200))) return false;
+      try {
+        if (typeof el.checkVisibility === "function"
+          && !el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+        var node = el;
+        for (var depth = 0; depth < 6 && node; depth += 1) {
+          var cs = getComputedStyle(node);
+          if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
+          if (node.hidden || (node.getAttribute && node.getAttribute("aria-hidden") === "true")) return false;
+          node = node.parentElement;
+        }
+        if (typeof document.elementFromPoint === "function") {
+          var x = Math.min(Math.max(r.left + r.width / 2, 0), (window.innerWidth || 1200) - 1);
+          var y = Math.min(Math.max(r.top + Math.min(r.height / 2, 20), 0), (window.innerHeight || 800) - 1);
+          var hit = document.elementFromPoint(x, y);
+          if (hit && hit !== el && !(el.contains && el.contains(hit)) && !(hit.contains && hit.contains(el))) return false;
+        }
+      } catch { return false; }
+      return true;
+    }
+
     function findEditor(sessionId) {
       var all = [];
       try {
@@ -199,15 +251,32 @@
       }) : [];
       var pool = scopedList.length ? scopedList : all;
       var active = document.activeElement;
+      // 输入光标实际落在哪个编辑器：即使 document.activeElement 是 body，
+      // 选区也能指出用户真正在用的 composer。
+      var selectionHost = null;
+      try {
+        var sel = typeof window.getSelection === "function" ? window.getSelection() : null;
+        var anchor = sel && sel.rangeCount ? sel.anchorNode : null;
+        if (anchor && anchor.nodeType === 3) anchor = anchor.parentElement;
+        if (anchor && typeof anchor.closest === "function") {
+          selectionHost = anchor.closest('[data-composer-input="true"]');
+        }
+      } catch { selectionHost = null; }
       var best = null;
       var bestScore = -1;
       pool.forEach(function (el) {
         var r = {};
         try { r = el.getBoundingClientRect(); } catch { r = {}; }
-        var visible = r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0
-          && r.top < (window.innerHeight || 0) && r.left < (window.innerWidth || 0);
+        var visible = isActuallyVisible(el);
         var score = 0;
-        if (active && (el === active || (el.contains && el.contains(active)))) score += 1000;
+        if (visible && active && (el === active || (el.contains && el.contains(active)))) score += 1000;
+        if (visible && selectionHost === el) score += 4000;
+        if (visible) {
+          try {
+            var scope = el.closest && el.closest('[class*="composer"], [data-composer]');
+            if (scope && scope.matches && scope.matches(':focus-within')) score += 1500;
+          } catch { /* 选择器不支持 */ }
+        }
         if (visible) score += 200;
         if (scopedList.indexOf(el) >= 0) score += 50;
         if (score > bestScore) { best = el; bestScore = score; }
