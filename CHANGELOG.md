@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [Unreleased]
+
+### Fixed
+
+- **Ghost follows the focused composer.** When more than one `[data-composer-input]` exists (hidden/offscreen editors), the plugin now scores session scope, focus and on-screen visibility instead of taking the first node, so the suggestion can no longer be painted near the bottom of the page; if no editor is visible/focused, the ghost is not rendered.
+
 ## [0.2.11] — 2026-11-04
 
 ### Added

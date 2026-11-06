@@ -1342,6 +1342,24 @@ check('设置页列出最近预测（含会话标题）',
     inst.env.fetchCalls.filter((c) => c.url.includes('/suggest')).length === 0, '');
 }
 
+// 页面存在多个 composer 时，ghost 必须跟随当前焦点/可见的那个
+{
+  const inst = setup();
+  const top = inst.env.editor;
+  top.getBoundingClientRect = () => ({ left: 100, top: 100, width: 400, height: 40 });
+  const bottom = {
+    tagName: 'DIV', innerText: '', textContent: '',
+    getBoundingClientRect: () => ({ left: 100, top: 800, width: 400, height: 40 }),
+    contains: () => false, closest: () => null,
+  };
+  inst.env.document.querySelectorAll = (sel) => (String(sel).includes('data-composer-input') ? [bottom, top] : []);
+  inst.env.document.activeElement = top;
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(3);
+  const ghost = find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true')[0];
+  check('多 composer 时 ghost 跟随焦点节点', Number(ghost?.props?.style?.top) < 300, String(ghost?.props?.style?.top));
+}
+
 // 任意位置新增图片节点都会收起 ghost
 {
   const inst = setup();
