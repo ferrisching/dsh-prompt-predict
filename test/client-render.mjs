@@ -223,8 +223,9 @@ function loadClient(localeService, sharedEnv) {
     setInterval: (fn) => setTimeout(fn, 0),
     clearInterval: clearTimeout,
     queueMicrotask,
-    getComputedStyle: () => ({
+    getComputedStyle: (node) => ({
       paddingLeft: '0px', paddingTop: '0px', fontFamily: 'sans', fontSize: '14px', lineHeight: '20px', fontWeight: '400',
+      transform: node && node.__transform ? 'matrix(1,0,0,1,0,368)' : 'none',
     }),
     CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
     TextDecoder, TextEncoder,
@@ -1370,13 +1371,14 @@ check('设置页列出最近预测（含会话标题）',
     tagName: 'DIV', innerText: '', textContent: '',
     getBoundingClientRect: () => ({ left: 100, top: 800, width: 400, height: 40 }),
     contains: () => false, closest: () => null,
+    checkVisibility: () => false,
   };
   inst.env.document.querySelectorAll = (sel) => (String(sel).includes('data-composer-input') ? [bottom, top] : []);
-  inst.env.document.activeElement = top;
+  inst.env.document.activeElement = bottom;   // 焦点在一个隐藏节点上，不能跟着它走
   const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
   await view.settle(3);
   const ghost = find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true')[0];
-  check('多 composer 时 ghost 跟随焦点节点', Number(ghost?.props?.style?.top) < 300, String(ghost?.props?.style?.top));
+  check('焦点在隐藏 composer 时仍选择可见节点', Number(ghost?.props?.style?.top) < 300, String(ghost?.props?.style?.top));
 }
 
 // 任意位置新增图片节点都会收起 ghost

@@ -254,6 +254,7 @@ await pressArrow('ArrowDown', 'ArrowDown', 40);
 await waitFor(async () => { const s3 = await state(); return s3.ghost && s3.ghost !== afterReroll && !/^正在生成/.test(s3.ghost); }, { timeout: 10000 });
 const afterDown = (await state()).ghost;
 check('真实 DSH：↓ 生成下一条建议', true, `${afterReroll} -> ${afterDown}`);
+await focusEditor();
 await pressArrow('ArrowUp', 'ArrowUp', 38);
 await waitFor(async () => (await state()).ghost === afterReroll, { timeout: 5000 });
 check('真实 DSH：↑ 回到上一条建议', true, `${afterDown} -> ${(await state()).ghost}`);

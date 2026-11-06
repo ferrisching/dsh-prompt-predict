@@ -315,10 +315,26 @@
       var notice = typeof props.notice === "string" ? props.notice : "";
       var t = props.t;
       var _p = useState(null), pos = _p[0], setPos = _p[1];
+      var ghostRef = useRef(null);
+      var _shift = useState({ x: 0, y: 0 }), shift = _shift[0], setShift = _shift[1];
 
+      // 渲染后按「实际视口位置 vs 期望位置」自校正：无论祖先是否有 transform、
+      // 嵌套了几个包含块，都能把 ghost 拉回编辑器坐标。
+      useLayoutEffect(function () {
+        var el = ghostRef.current;
+        if (!el || !pos) return;
+        var r;
+        try { r = el.getBoundingClientRect(); } catch { return; }
+        var dx = pos.left - r.left;
+        var dy = pos.top - r.top;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+          setShift(function (prev) { return { x: prev.x + dx, y: prev.y + dy }; });
+        }
+      }, [pos, suggestion]);
       var measure = useCallback(function () {
         var ed = findEditor(sessionId);
-        if (!ed) { setPos(null); return; }
+        // 编辑器短暂不可见（焦点/滚动切换）时保留上一帧位置，避免 ghost 闪一下消失。
+        if (!ed) return;
         var r = ed.getBoundingClientRect();
         var cs = getComputedStyle(ed);
         // 宽度也照抄输入框的**内容区**：建议长的时候在原位折行，而不是被 60ch 截断成省略号。
@@ -385,12 +401,13 @@
 
       if (!pos) return null;
       return h("div", {
+        ref: ghostRef,
         role: "status",
         "aria-live": "polite",
         "data-prompt-predict-ghost": "true",
         dir: "auto",
         style: {
-          position: "fixed", left: pos.left, top: pos.top, zIndex: 60,
+          position: "fixed", left: pos.left + shift.x, top: pos.top + shift.y, zIndex: 60, margin: 0, padding: 0, border: 0, background: "transparent", inset: "auto",
           width: pos.width || undefined,
           pointerEvents: "none",
           fontFamily: pos.fontFamily, fontSize: pos.fontSize, lineHeight: pos.lineHeight, fontWeight: pos.fontWeight,
@@ -523,12 +540,13 @@
         var padRight = parseFloat(cs.paddingRight || "0") || 0;
         var scope = findComposerScope(sessionId);
         var box = scope && typeof scope.getBoundingClientRect === "function" ? scope.getBoundingClientRect() : null;
+        var off = fixedPositionOffset(ed);
         setPos({
-          left: r.left + padLeft,
-          top: r.top + parseFloat(cs.paddingTop || "0"),
+          left: r.left + padLeft - off.x,
+          top: r.top + parseFloat(cs.paddingTop || "0") - off.y,
           width: r.width > 0 ? Math.max(80, r.width - padLeft - padRight) : 0,
           height: r.height || 0,
-          bottom: box && box.height ? box.top + box.height : r.top + (r.height || 0),
+          bottom: (box && box.height ? box.top + box.height : r.top + (r.height || 0)) - off.y,
           fontFamily: cs.fontFamily, fontSize: cs.fontSize,
         });
       }, [sessionId]);
