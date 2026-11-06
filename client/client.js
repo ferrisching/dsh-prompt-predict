@@ -631,8 +631,38 @@ window.__ModuleLoader__.load({
     }
 
     function findEditor(sessionId) {
-      var scoped = sessionId ? document.querySelector('[data-conversation-session="' + sessionId + '"] [data-composer-input="true"]') : null;
-      return scoped || document.querySelector('[data-composer-input="true"]');
+      var all = [];
+      try {
+        all = Array.from(document.querySelectorAll('[data-composer-input="true"]') || []);
+      } catch { all = []; }
+      // 旧 DOM / 测试环境没有 querySelectorAll 时退回单节点查找。
+      if (!all.length) {
+        var scoped = sessionId ? document.querySelector('[data-conversation-session="' + sessionId + '"] [data-composer-input="true"]') : null;
+        return scoped || document.querySelector('[data-composer-input="true"]') || null;
+      }
+      var scopedList = sessionId ? all.filter(function (el) {
+        try {
+          var host = el.closest && el.closest('[data-conversation-session]');
+          return host && host.getAttribute('data-conversation-session') === sessionId;
+        } catch { return false; }
+      }) : [];
+      var pool = scopedList.length ? scopedList : all;
+      var active = document.activeElement;
+      var best = null;
+      var bestScore = -1;
+      pool.forEach(function (el) {
+        var r = {};
+        try { r = el.getBoundingClientRect(); } catch { r = {}; }
+        var visible = r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0
+          && r.top < (window.innerHeight || 0) && r.left < (window.innerWidth || 0);
+        var score = 0;
+        if (active && (el === active || (el.contains && el.contains(active)))) score += 1000;
+        if (visible) score += 200;
+        if (scopedList.indexOf(el) >= 0) score += 50;
+        if (score > bestScore) { best = el; bestScore = score; }
+      });
+      // 既不可见也不是焦点：宁可不画，也不要把 ghost 丢到离屏/隐藏的编辑器上。
+      return best && bestScore >= 200 ? best : null;
     }
 
     // composer 的外层容器：附件预览、工具栏通常在这一层，而不是可编辑节点内部。
