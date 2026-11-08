@@ -5,6 +5,12 @@
 
 [English](CHANGELOG.md)
 
+## [Unreleased]
+
+### 修复
+
+- **ghost 提示条不再溢出到输入框外。** 主题可能把 `[data-composer-input]` 压成一行高（例如 `dsh-claude-style` 的 `min-height:24px` + `overflow:hidden`）。ghost 是绝对定位的浮层、不参与输入框排版，建议一旦换行，后面的 `Tab` / `↓` / `Esc` 提示就会被挤出编辑器，盖住输入框下方的按钮。现在浮层会测量自身高度，只有超过输入框原本的 `min-height` 时才把输入框临时撑高，收起后还原；单行建议不改变输入框高度。顺带把隐藏占位符的选择器补上主题的 `[data-dsh-synthetic-placeholder]`。
+
 ## [0.2.13] — 2026-11-06
 
 ### 修复

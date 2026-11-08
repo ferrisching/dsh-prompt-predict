@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [Unreleased]
+
+### Fixed
+
+- **Ghost hints stay inside a short composer.** Themes may pin `[data-composer-input]` to a single line (for example `dsh-claude-style` sets `min-height:24px` with `overflow:hidden`). The ghost overlay is absolutely positioned and does not take part in the composer layout, so a wrapped suggestion pushed the `Tab` / `↓` / `Esc` hints out of the editor and onto the controls below it. The overlay now measures its own height and raises the editor's `min-height` only while that height exceeds the composer's natural one, then restores it; single-line suggestions leave the composer untouched. Placeholder hiding also covers the theme's synthetic placeholder (`[data-dsh-synthetic-placeholder]`).
+
 ## [0.2.13] — 2026-11-06
 
 ### Fixed

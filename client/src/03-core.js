@@ -386,7 +386,7 @@
         for (var depth = 0; depth < 3 && scope; depth += 1) {
           try {
             var list = typeof scope.querySelectorAll === "function"
-              ? Array.prototype.slice.call(scope.querySelectorAll('[class*="placeholder"], [data-placeholder]'))
+              ? Array.prototype.slice.call(scope.querySelectorAll('[class*="placeholder"], [data-placeholder], [data-dsh-synthetic-placeholder]'))
               : [];
             list.forEach(function (node) {
               if (!node || !node.style || node === ed) return;
@@ -398,6 +398,65 @@
         }
         return function () { hidden.forEach(function (item) { item.node.style.visibility = item.old; }); };
       }, [sessionId, suggestion]);
+
+      // ghost 是浮层，不参与输入框排版：主题一旦把 [data-composer-input] 压成一行高
+      // （例如 dsh-claude-style 的 min-height:24px + overflow:hidden），换行的建议和它后面的
+      // 操作提示就会溢出到输入框外，盖住输入框下方的按钮。这里按 ghost 的真实高度把输入框的
+      // min-height 临时撑起来，ghost 收起后还原；单行建议不改变高度，观感与原来一致。
+      var growRef = useRef(null);
+      useLayoutEffect(function () {
+        var el = ghostRef.current;
+        var ed = findEditor(sessionId);
+        var resetHeight = function () {
+          var grown = growRef.current;
+          if (!grown || !grown.ed || !grown.ed.style) return;
+          try { grown.ed.style.minHeight = grown.base; } catch { /* 样式不可写就算了 */ }
+        };
+        if (!el || !ed || !ed.style) { resetHeight(); return; }
+        var height = 0;
+        try { height = el.getBoundingClientRect().height; } catch { return; }
+        var cs = null;
+        try { cs = getComputedStyle(ed); } catch { cs = null; }
+        if (!growRef.current || growRef.current.ed !== ed) {
+          var previous = growRef.current;
+          if (previous && previous.ed && previous.ed.style && previous.ed !== ed) {
+            try { previous.ed.style.minHeight = previous.base; } catch { /* 忽略 */ }
+          }
+          var base = "";
+          try {
+            if (ed.getAttribute("data-prompt-predict-grow-base") === null) {
+              base = ed.style.minHeight || "";
+              ed.setAttribute("data-prompt-predict-grow-base", base);
+            } else {
+              base = ed.getAttribute("data-prompt-predict-grow-base") || "";
+            }
+          } catch { base = ""; }
+          // natural 高度必须取自 CSS：inline min-height 可能正是上一帧自己写进去的。
+          var natural = 0;
+          try {
+            var saved = ed.style.minHeight;
+            ed.style.minHeight = base;
+            natural = parseFloat(getComputedStyle(ed).minHeight || "0") || 0;
+            ed.style.minHeight = saved;
+          } catch { natural = 0; }
+          growRef.current = { ed: ed, base: base, natural: natural };
+        }
+        var padTop = cs ? (parseFloat(cs.paddingTop || "0") || 0) : 0;
+        var padBottom = cs ? (parseFloat(cs.paddingBottom || "0") || 0) : 0;
+        var need = Math.ceil(padTop + height + padBottom);
+        var next = need > growRef.current.natural + 1 ? need + "px" : growRef.current.base;
+        if (ed.style.minHeight !== next) ed.style.minHeight = next;
+      });
+      // 卸载时还原，避免组件消失后输入框停在撑高的状态。
+      useEffect(function () {
+        return function () {
+          var grown = growRef.current;
+          if (grown && grown.ed && grown.ed.style) {
+            try { grown.ed.style.minHeight = grown.base; } catch { /* 忽略 */ }
+          }
+          growRef.current = null;
+        };
+      }, []);
 
       if (!pos) return null;
       return h("div", {
