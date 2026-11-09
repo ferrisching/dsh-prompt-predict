@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.14] — 2026-11-09
+
+### Fixed
+
+- **Ghost hints stay inside a short composer.** Themes may pin `[data-composer-input]` to a single line (for example `dsh-claude-style` sets `min-height:24px` with `overflow:hidden`). The ghost overlay is absolutely positioned and does not take part in the composer layout, so a wrapped suggestion pushed the `Tab` / `↓` / `Esc` hints out of the editor and onto the controls below it. The overlay now measures its own height and raises the editor's `min-height` only while that height exceeds the composer's natural one, then restores it; single-line suggestions leave the composer untouched. Placeholder hiding also covers the theme's synthetic placeholder (`[data-dsh-synthetic-placeholder]`).
+
+## [0.2.13] — 2026-11-06
+
+### Fixed
+
+- **Ghost placement is self-correcting.** Hidden/`aria-hidden` editors are rejected, the editor holding the current selection wins even when `document.activeElement` is `body`, and after rendering the ghost measures its real viewport position and compensates for transformed or nested containing blocks; a transiently missing editor keeps the last position instead of flickering.
+
 ## [0.2.12] — 2026-11-06
 
 ### Changed
@@ -15,12 +27,6 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 
 - **Ghost follows the focused composer.** When more than one `[data-composer-input]` exists, the plugin scores session scope, focus and on-screen visibility instead of taking the first node; if none qualifies, no ghost is rendered.
-
-## [0.2.13] — 2026-11-06
-
-### Fixed
-
-- **Ghost placement is self-correcting.** Hidden/`aria-hidden` editors are rejected, the editor holding the current selection wins even when `document.activeElement` is `body`, and after rendering the ghost measures its real viewport position and compensates for transformed or nested containing blocks; a transiently missing editor keeps the last position instead of flickering.
 
 ## [0.2.11] — 2026-11-04
 

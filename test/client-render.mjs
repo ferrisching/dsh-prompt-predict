@@ -29,6 +29,9 @@ function createReact() {
   const stores = new Map();
   let current = null;
   let onChange = () => {};
+  // host 节点的 ref 替身：默认不赋值（`ref.current` 保持 null）；用例需要模拟
+  // 「ghost 节点有多大」时用 setRefFactory 注入一个带 getBoundingClientRect 的假节点。
+  let refFactory = null;
   const storeOf = (Component) => {
     if (!stores.has(Component)) stores.set(Component, { hooks: [], cursor: 0 });
     return stores.get(Component);
@@ -78,6 +81,8 @@ function createReact() {
     React: api,
     reset() { stores.clear(); },
     setOnChange(fn) { onChange = fn; },
+    setRefFactory(fn) { refFactory = fn; },
+    get refFactory() { return refFactory; },
     /** 渲染单个组件（组件内再嵌套的组件由 expandTree 负责继续展开） */
     render(Component, props) {
       const s = storeOf(Component);
@@ -96,8 +101,17 @@ function expandTree(react, node, depth = 0) {
   if (!node || typeof node !== 'object') return node;
   if (typeof node.type === 'function') return expandTree(react, react.render(node.type, node.props), depth + 1);
   const kids = node.props ? node.props.children : null;
-  if (kids === undefined || kids === null) return node;
-  return { ...node, props: { ...node.props, children: expandTree(react, kids, depth + 1) } };
+  if (kids === undefined || kids === null) { assignRef(react, node); return node; }
+  const built = { ...node, props: { ...node.props, children: expandTree(react, kids, depth + 1) } };
+  assignRef(react, built);
+  return built;
+}
+
+// host 节点的 ref：只有用例装了 refFactory 才会赋值，其他用例里 ref.current 保持 null。
+function assignRef(react, node) {
+  const ref = node && node.props ? node.props.ref : null;
+  if (!ref || typeof ref !== 'object' || typeof react.refFactory !== 'function') return;
+  ref.current = react.refFactory(node);
 }
 
 // ---------------- 挂载 + 刷新 ----------------
@@ -159,6 +173,11 @@ function makeEnv() {
     parentElement: { querySelector: () => null },
     contains: (node) => node === editor,
     focus() { document.activeElement = editor; },
+    // inline 样式替身：主题把输入框压成一行高时，ghost 会临时改写 min-height。
+    style: {},
+    __attrs: {},
+    getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.__attrs, name) ? this.__attrs[name] : null; },
+    setAttribute(name, value) { this.__attrs[name] = String(value); },
     innerText: '',
     textContent: '',
     addEventListener: (type, fn) => addListener(editorListeners, type, fn),
@@ -225,6 +244,8 @@ function loadClient(localeService, sharedEnv) {
     queueMicrotask,
     getComputedStyle: (node) => ({
       paddingLeft: '0px', paddingTop: '0px', fontFamily: 'sans', fontSize: '14px', lineHeight: '20px', fontWeight: '400',
+      // 主题把输入框压成一行高：ghost 撑高逻辑要按这个值判断「原本多高」。
+      minHeight: '24px',
       transform: node && node.__transform ? 'matrix(1,0,0,1,0,368)' : 'none',
     }),
     CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } },
@@ -423,6 +444,35 @@ const ellipsized = find(ghostNode, (n) => n.props?.style && (n.props.style.textO
 check('长建议不被省略号截断（宽度取自输入框、允许折行）',
   ghostStyle.whiteSpace === 'pre-wrap' && ghostStyle.width === 400 && ellipsized.length === 0,
   `whiteSpace=${ghostStyle.whiteSpace} width=${ghostStyle.width} 截断节点=${ellipsized.length}`);
+
+// ③c 主题把输入框压成一行高（dsh-claude-style 的 min-height:24px + overflow:hidden）时，
+// ghost 是浮层、不参与排版，换行的建议会把 Tab / ↻ / Esc 提示条挤出输入框，正好盖住
+// 输入框下方「完全权限」那一排按钮。这里守住：两行 ghost 要把输入框临时撑到 ghost 高度，
+// ghost 消失后还原；单行建议不改变高度。
+{
+  const probeGrow = async (ghostHeight) => {
+    const inst = setup();
+    inst.react.setRefFactory(() => ({
+      // 位置与编辑器一致：ghost 的「自校正」按视口位置比对，坐标不匹配会触发无限重渲染。
+      getBoundingClientRect: () => ({ left: 100, top: 200, width: 400, height: ghostHeight }),
+    }));
+    const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+    await view.settle(6);
+    const grown = inst.env.editor.style.minHeight || '';
+    // ghost 节点从 DOM 消失（建议收起时真实 React 会卸载它）
+    inst.react.setRefFactory(() => null);
+    view.render();
+    await view.settle(3);
+    const restored = inst.env.editor.style.minHeight || '';
+    inst.react.setRefFactory(null);
+    return { grown, restored };
+  };
+  const wrapped = await probeGrow(64);
+  check('两行 ghost 把单行输入框撑到 ghost 高度', wrapped.grown === '64px', `minHeight=${JSON.stringify(wrapped.grown)}`);
+  check('ghost 消失后输入框高度还原', wrapped.restored === '', `minHeight=${JSON.stringify(wrapped.restored)}`);
+  const single = await probeGrow(20);
+  check('单行 ghost 不改变输入框高度', single.grown === '', `minHeight=${JSON.stringify(single.grown)}`);
+}
 
 // ④ 设置页
 react.reset();
