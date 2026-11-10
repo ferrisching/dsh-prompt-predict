@@ -2165,6 +2165,68 @@ for (const [lang, expect] of [
   inst.env.editor.textContent = '';
 }
 
+// 主题让焦点落在 body / composer 外层时，Tab 仍要采纳；焦点在按钮上不抢 Tab
+{
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(3);
+  let prevented = 0;
+  const tab = () => inst.env.window.dispatchEvent({
+    type: 'keydown', key: 'Tab',
+    preventDefault() { prevented += 1; }, stopPropagation() {},
+  });
+
+  inst.env.document.activeElement = inst.env.document.body;
+  tab();
+  await view.settle(2);
+  check('焦点在 body 时 Tab 仍采纳建议', !hasGhost(view.tree) && prevented === 1,
+    `ghost=${hasGhost(view.tree)} prevented=${prevented}`);
+}
+
+{
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(3);
+  let prevented = 0;
+  inst.env.document.activeElement = { tagName: 'BUTTON', id: 'permission-button' };
+  inst.env.window.dispatchEvent({
+    type: 'keydown', key: 'Tab',
+    preventDefault() { prevented += 1; }, stopPropagation() {},
+  });
+  await view.settle(2);
+  check('焦点在工具栏按钮时 Tab 不被劫持', hasGhost(view.tree) && prevented === 0,
+    `ghost=${hasGhost(view.tree)} prevented=${prevented}`);
+}
+
+// Lexical 插入失败时用 execCommand 兜底
+{
+  let inserted = null;
+  const inst = setup();
+  inst.env.document.execCommand = (cmd, ui, text) => { inserted = text; return true; };
+  const props = () => Object.assign({}, makeProps(''), {
+    inputActions: { captureInsertion: () => ({}), insertText: () => false },
+  });
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, props);
+  await view.settle(3);
+  inst.env.document.activeElement = inst.env.document.body;
+  inst.env.window.dispatchEvent({ type: 'keydown', key: 'Tab', preventDefault() {}, stopPropagation() {} });
+  await view.settle(2);
+  check('insertText 失败时用原生命令兜底', inserted === '先补测试再实现', String(inserted));
+}
+
+// 主题没有 inputActions 时也能用原生命令采纳
+{
+  let inserted = null;
+  const inst = setup();
+  inst.env.document.execCommand = (cmd, ui, text) => { inserted = text; return true; };
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => Object.assign({}, makeProps(''), { inputActions: null }));
+  await view.settle(3);
+  inst.env.document.activeElement = inst.env.document.body;
+  inst.env.window.dispatchEvent({ type: 'keydown', key: 'Tab', preventDefault() {}, stopPropagation() {} });
+  await view.settle(2);
+  check('没有 inputActions 时 Tab 仍可采纳', inserted === '先补测试再实现' && !hasGhost(view.tree), String(inserted));
+}
+
 // 修复 2：编辑器里已有草稿时不预测、不显示（rc.2 拿不到 draft，只能读 DOM）
 {
   let fetches = 0;

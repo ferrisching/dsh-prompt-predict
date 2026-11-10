@@ -630,11 +630,28 @@
       }, [sessionId]);
 
       var accept = useCallback(function () {
-        if (busyState || !visibleSuggestion || !inputActions || dismissedByDraft.current) return false;
+        if (busyState || !visibleSuggestion || dismissedByDraft.current) return false;
         try {
-          var span = inputActions.captureInsertion();
-          selfInsertAt.current = Date.now();
-          if (!inputActions.insertText(visibleSuggestion, span)) return false;
+          var editor = findEditor(sessionId);
+          // 主题可能把焦点放在 composer 外层容器/body：先把焦点放回编辑器再接管选区。
+          if (editor) {
+            var active = document.activeElement;
+            if (!(editor === active || (editor.contains && editor.contains(active)))) {
+              try { editor.focus(); } catch { /* 聚焦失败仍尝试插入 */ }
+            }
+          }
+          var inserted = false;
+          if (inputActions) {
+            var span = inputActions.captureInsertion();
+            selfInsertAt.current = Date.now();
+            inserted = inputActions.insertText(visibleSuggestion, span);
+          }
+          if (!inserted && editor) {
+            // 主题自带的 Lexical 插入失败时，退到浏览器原生命令再试一次。
+            try { editor.focus(); } catch { /* 忽略 */ }
+            try { inserted = document.execCommand("insertText", false, visibleSuggestion); } catch { inserted = false; }
+          }
+          if (!inserted) return false;
           patchLastRun(sessionId, { suggestion: suggestion, accepted: true });
           suggestionHistoryRef.current = [];
           historyIndexRef.current = 0;

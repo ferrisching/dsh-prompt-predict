@@ -379,15 +379,33 @@
       try {
         var ed = findEditor(sessionId);
         if (!ed) return false;
-        var contains = function (node) {
+        var scope = findComposerScope(sessionId) || ed;
+        var insideEditor = function (node) {
           return node === ed || (typeof ed.contains === "function" && ed.contains(node));
         };
+        var insideComposer = function (node) {
+          return insideEditor(node) || node === scope
+            || (typeof scope.contains === "function" && scope.contains(node));
+        };
+        var isInteractive = function (node) {
+          if (!node) return false;
+          var tag = String(node.tagName || "").toUpperCase();
+          if (/^(BUTTON|INPUT|TEXTAREA|SELECT|A)$/.test(tag)) return true;
+          try {
+            var role = node.getAttribute && node.getAttribute("role");
+            return role === "button" || role === "link" || role === "tab";
+          } catch { return false; }
+        };
         var target = event && event.target;
-        if (target && contains(target)) return true;
+        if (target && insideEditor(target)) return true;
+        if (target && insideComposer(target) && !isInteractive(target)) return true;
         var active = document.activeElement;
-        // 没有 activeElement 的极简测试环境按聚焦处理；真实浏览器里这里通常是 body/input。
         if (!active) return true;
-        return contains(active);
+        if (insideEditor(active)) return true;
+        // 主题把焦点放在 composer 外层容器或 body 上时，Tab 仍应采纳；
+        // 焦点在工具栏按钮等交互控件上时，不抢用户的 Tab。
+        if (active === document.body) return true;
+        return insideComposer(active) && !isInteractive(active);
       } catch { return false; }
     }
 

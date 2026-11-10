@@ -5,6 +5,12 @@
 
 [English](CHANGELOG.md)
 
+## [0.2.15] — 2026-11-10
+
+### 修复
+
+- **主题把焦点放在 composer 外层或 `body` 时，Tab 仍能采纳建议。** 现在把非交互的 composer 外层容器和 `body` 也视为输入框聚焦；采纳前先把焦点放回编辑器，主题的 Lexical 插入返回失败、或 slot 没有提供 `inputActions` 时，再用 `document.execCommand("insertText")` 兜底；焦点在工具栏按钮上时仍保留正常 Tab 行为。
+
 ## [0.2.14] — 2026-11-09
 
 ### 修复

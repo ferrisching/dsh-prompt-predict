@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.15] — 2026-11-10
+
+### Fixed
+
+- **Tab accepts when the theme focuses a wrapper or `body`.** The acceptance handler now treats a non-interactive composer wrapper (and `body`) as composer focus, focuses the editor before capturing the insertion, and falls back to `document.execCommand("insertText")` when the theme's Lexical insert reports failure or no `inputActions` is supplied. A focused toolbar button still keeps its normal Tab behavior.
+
 ## [0.2.14] — 2026-11-09
 
 ### Fixed
