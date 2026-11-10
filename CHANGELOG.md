@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.16] — 2026-11-10
+
+### Fixed
+
+- **Tab accepts from any non-text location.** While a ghost is visible, Tab now accepts even when focus is on a toolbar button, a previous message's action, or elsewhere outside the composer. It still yields to other text inputs/selects and open dialogs, and focuses the editor before inserting.
+
 ## [0.2.15] — 2026-11-10
 
 ### Fixed

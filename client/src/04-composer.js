@@ -714,6 +714,16 @@
         if (!visibleSuggestion) return;
         var onKey = function (event) {
           if (event.isComposing) return;
+          // Tab 采纳放宽到整个页面（除其它文本输入/下拉框和对话框），
+          // 这样焦点停在上一条回复的按钮上时也能直接采纳。
+          if (event.key === "Tab" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
+            if (!canAcceptTabEverywhere(sessionId, event)) return;
+            if (!accept()) return;
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
+            else event.stopPropagation();
+            return;
+          }
           if (!isComposerFocused(sessionId, event)) return;
           if (event.key === "ArrowUp" && switchEnabled && visibleSuggestion) {
             var hist = suggestionHistoryRef.current;
@@ -733,10 +743,6 @@
             typedDuringRequest.current = true;
             setTypedTick(function (n) { return n + 1; });
           }
-          if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
-          if (!accept()) return;
-          event.preventDefault();
-          event.stopPropagation();
         };
         // 除了可打印键，粘贴 / 输入法合成 / 任何文本输入 / 拖拽落字 也算「用户开始输入」。
         // 只监听 keydown 的话，中文输入法（key=Process）和 Cmd+V 都躲得过去，灰字会压在正文上。

@@ -2194,7 +2194,7 @@ for (const [lang, expect] of [
     preventDefault() { prevented += 1; }, stopPropagation() {},
   });
   await view.settle(2);
-  check('焦点在工具栏按钮时 Tab 不被劫持', hasGhost(view.tree) && prevented === 0,
+  check('焦点在工具栏按钮时 Tab 仍采纳', !hasGhost(view.tree) && prevented === 1,
     `ghost=${hasGhost(view.tree)} prevented=${prevented}`);
 }
 

@@ -374,6 +374,28 @@
       return Boolean(editorText(sessionId));
     }
 
+    // Tab 采纳的放宽规则：ghost 可见时，除了其它文本输入/下拉框和对话框，
+    // 任何焦点位置都可以采纳；工具栏/消息操作按钮不再让 Tab 跑掉。
+    function canAcceptTabEverywhere(sessionId, event) {
+      try {
+        var ed = findEditor(sessionId);
+        var inEditor = function (node) {
+          return Boolean(ed && (node === ed || (ed.contains && ed.contains(node))));
+        };
+        var isTextEntry = function (node) {
+          if (!node) return false;
+          var tag = String(node.tagName || "").toUpperCase();
+          return node.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
+        };
+        var active = document.activeElement;
+        if (active && isTextEntry(active) && !inEditor(active)) return false;
+        if (event && event.target && isTextEntry(event.target) && !inEditor(event.target)) return false;
+        if (active && typeof active.closest === "function"
+          && active.closest('[role="dialog"], [aria-modal="true"]')) return false;
+        return true;
+      } catch { return isComposerFocused(sessionId, event); }
+    }
+
     // 快捷键只能在当前 composer 聚焦时接管；否则 Tab 应该正常用于焦点移动。
     function isComposerFocused(sessionId, event) {
       try {
