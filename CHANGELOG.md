@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.17] — 2026-11-11
+
+### Fixed
+
+- **Ghost text stays inside the viewport under UI scaling.** The overlay width is clamped to the remaining viewport width, and `!important` rules force `pre-wrap`/`overflow-wrap` on the ghost and its text node so a theme or scaled layout cannot leave it on one unwrapped line outside the composer.
+
 ## [0.2.16] — 2026-11-10
 
 ### Fixed

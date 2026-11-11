@@ -445,6 +445,16 @@ check('长建议不被省略号截断（宽度取自输入框、允许折行）'
   ghostStyle.whiteSpace === 'pre-wrap' && ghostStyle.width === 400 && ellipsized.length === 0,
   `whiteSpace=${ghostStyle.whiteSpace} width=${ghostStyle.width} 截断节点=${ellipsized.length}`);
 
+// UI 放大后 ghost 宽度不能超过视口剩余空间
+{
+  const inst = setup();
+  inst.env.window.innerWidth = 300;
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(3);
+  const ghost = find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true')[0];
+  check('ghost 宽度按视口剩余空间收敛', Number(ghost?.props?.style?.width) <= 192, String(ghost?.props?.style?.width));
+}
+
 // ③c 主题把输入框压成一行高（dsh-claude-style 的 min-height:24px + overflow:hidden）时，
 // ghost 是浮层、不参与排版，换行的建议会把 Tab / ↻ / Esc 提示条挤出输入框，正好盖住
 // 输入框下方「完全权限」那一排按钮。这里守住：两行 ghost 要把输入框临时撑到 ghost 高度，

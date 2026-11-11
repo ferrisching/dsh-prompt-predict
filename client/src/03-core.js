@@ -353,10 +353,13 @@
         } catch { /* 选区不可用时退回编辑器起点 */ }
         var left = caret ? Math.max(caret.left, r.left + padLeft) : r.left + padLeft;
         var top = caret ? Math.max(caret.top, r.top + parseFloat(cs.paddingTop || "0")) : r.top + parseFloat(cs.paddingTop || "0");
+        var width = r.width > 0 ? Math.max(80, (typeof r.right === "number" ? r.right : r.left + r.width) - padRight - left) : 0;
+        var viewportWidth = Number(window.innerWidth) || 0;
+        if (width && viewportWidth > 0) width = Math.min(width, Math.max(80, viewportWidth - left - 8));
         setPos({
           left: left,
           top: top,
-          width: r.width > 0 ? Math.max(80, (typeof r.right === "number" ? r.right : r.left + r.width) - padRight - left) : 0,
+          width: width,
           fontFamily: cs.fontFamily,
           fontSize: cs.fontSize,
           lineHeight: cs.lineHeight,
