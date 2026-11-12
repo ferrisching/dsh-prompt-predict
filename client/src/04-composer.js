@@ -633,6 +633,12 @@
         if (busyState || !visibleSuggestion || dismissedByDraft.current) return false;
         try {
           var editor = findEditor(sessionId);
+          var focused = document.activeElement;
+          // 会话切换后 findEditor 可能短暂指向旧编辑器；焦点所在的 contenteditable 优先。
+          if (focused && focused.isContentEditable
+            && (!editor || (editor !== focused && editor.contains && !editor.contains(focused)))) {
+            editor = focused;
+          }
           // 主题可能把焦点放在 composer 外层容器/body：先把焦点放回编辑器再接管选区。
           if (editor) {
             var active = document.activeElement;
@@ -710,20 +716,23 @@
         runRequest(true);
       };
 
+      // 全局 Tab 控制器：只登记当前可见建议；组件重挂/会话切换不会留下旧闭包。
+      useEffect(function () {
+        if (!visibleSuggestion) return;
+        var controller = {
+          canAccept: function (event) { return canAcceptTabEverywhere(sessionId, event); },
+          accept: function () { return accept(); },
+        };
+        window.__dshPromptPredictTabAccept = controller;
+        return function () {
+          if (window.__dshPromptPredictTabAccept === controller) window.__dshPromptPredictTabAccept = null;
+        };
+      }, [visibleSuggestion, accept, sessionId]);
+
       useEffect(function () {
         if (!visibleSuggestion) return;
         var onKey = function (event) {
           if (event.isComposing) return;
-          // Tab 采纳放宽到整个页面（除其它文本输入/下拉框和对话框），
-          // 这样焦点停在上一条回复的按钮上时也能直接采纳。
-          if (event.key === "Tab" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
-            if (!canAcceptTabEverywhere(sessionId, event)) return;
-            if (!accept()) return;
-            event.preventDefault();
-            if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
-            else event.stopPropagation();
-            return;
-          }
           if (!isComposerFocused(sessionId, event)) return;
           if (event.key === "ArrowUp" && switchEnabled && visibleSuggestion) {
             var hist = suggestionHistoryRef.current;

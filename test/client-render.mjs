@@ -2237,6 +2237,41 @@ for (const [lang, expect] of [
   check('没有 inputActions 时 Tab 仍可采纳', inserted === '先补测试再实现' && !hasGhost(view.tree), String(inserted));
 }
 
+// 会话切换后 findEditor 可能短暂指向旧节点：焦点 contenteditable 仍应采纳
+{
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(3);
+  let prevented = 0;
+  inst.env.document.activeElement = {
+    tagName: 'DIV',
+    isContentEditable: true,
+    closest: (sel) => (String(sel).includes('dialog') ? null : {}),
+    contains: () => false,
+  };
+  inst.env.window.dispatchEvent({ type: 'keydown', key: 'Tab', preventDefault() { prevented += 1; }, stopPropagation() {} });
+  await view.settle(2);
+  check('焦点 contenteditable 与会话节点短暂不一致时仍采纳',
+    !hasGhost(view.tree) && prevented === 1, `ghost=${hasGhost(view.tree)} prevented=${prevented}`);
+}
+
+// 插入失败时也不让 Tab 把焦点移走
+{
+  const inst = setup();
+  inst.env.document.execCommand = () => false;
+  const props = () => Object.assign({}, makeProps(''), {
+    inputActions: { captureInsertion: () => ({}), insertText: () => false },
+  });
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, props);
+  await view.settle(3);
+  let prevented = 0;
+  inst.env.document.activeElement = inst.env.document.body;
+  inst.env.window.dispatchEvent({ type: 'keydown', key: 'Tab', preventDefault() { prevented += 1; }, stopPropagation() {} });
+  await view.settle(2);
+  check('插入失败时 Tab 仍不跳走', prevented === 1 && hasGhost(view.tree),
+    `prevented=${prevented} ghost=${hasGhost(view.tree)}`);
+}
+
 // 修复 2：编辑器里已有草稿时不预测、不显示（rc.2 拿不到 draft，只能读 DOM）
 {
   let fetches = 0;

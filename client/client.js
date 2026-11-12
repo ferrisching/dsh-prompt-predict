@@ -842,10 +842,21 @@ window.__ModuleLoader__.load({
           return node.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
         };
         var active = document.activeElement;
-        if (active && isTextEntry(active) && !inEditor(active)) return false;
-        if (event && event.target && isTextEntry(event.target) && !inEditor(event.target)) return false;
-        if (active && typeof active.closest === "function"
-          && active.closest('[role="dialog"], [aria-modal="true"]')) return false;
+        var target = event && event.target;
+        var isDialog = function (node) {
+          return Boolean(node && typeof node.closest === "function"
+            && node.closest('[role="dialog"], [aria-modal="true"]'));
+        };
+        if (isDialog(active) || isDialog(target)) return false;
+        var checkTextEntry = function (node) {
+          if (!node || !isTextEntry(node) || inEditor(node)) return true;
+          // 会话切换/主题差异下，contenteditable 未必带 composer 属性；
+          // 只要不是对话框，仍按输入框处理，避免 Tab 跑掉。
+          if (node.isContentEditable) return true;
+          return false;
+        };
+        if (!checkTextEntry(active)) return false;
+        if (!checkTextEntry(target)) return false;
         return true;
       } catch { return isComposerFocused(sessionId, event); }
     }
@@ -896,6 +907,25 @@ window.__ModuleLoader__.load({
     }
     var liveSessionId = readLiveSessionId() || null;
     var pluginPageOpener = null;   // DSH Plugins 页导航（旧运行时没有）
+
+    // 模块级 Tab 监听：不依赖 dock 组件 effect 是否在会话切换后及时重挂。
+    // 当前可见建议的 controller 放在 window 上，多个客户端模块实例共用。
+    function installGhostTabListener() {
+      if (typeof window === "undefined" || window.__dshPromptPredictTabInstalled) return;
+      window.__dshPromptPredictTabInstalled = true;
+      window.addEventListener("keydown", function (event) {
+        if (!event || event.isComposing) return;
+        if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+        var controller = window.__dshPromptPredictTabAccept;
+        if (!controller || typeof controller.canAccept !== "function" || typeof controller.accept !== "function") return;
+        if (!controller.canAccept(event)) return;
+        // 只要处于采纳上下文，就不让 Tab 把焦点移走；插入失败时保留 ghost 供重试。
+        controller.accept();
+        event.preventDefault();
+        if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
+        else event.stopPropagation();
+      }, true);
+    }
     function currentLiveSessionId() {
       var stored = readLiveSessionId();
       // undefined = 存储不可用；此时保留本模块内存里的值，不清掉它。
@@ -2172,6 +2202,12 @@ window.__ModuleLoader__.load({
         if (busyState || !visibleSuggestion || dismissedByDraft.current) return false;
         try {
           var editor = findEditor(sessionId);
+          var focused = document.activeElement;
+          // 会话切换后 findEditor 可能短暂指向旧编辑器；焦点所在的 contenteditable 优先。
+          if (focused && focused.isContentEditable
+            && (!editor || (editor !== focused && editor.contains && !editor.contains(focused)))) {
+            editor = focused;
+          }
           // 主题可能把焦点放在 composer 外层容器/body：先把焦点放回编辑器再接管选区。
           if (editor) {
             var active = document.activeElement;
@@ -2249,20 +2285,23 @@ window.__ModuleLoader__.load({
         runRequest(true);
       };
 
+      // 全局 Tab 控制器：只登记当前可见建议；组件重挂/会话切换不会留下旧闭包。
+      useEffect(function () {
+        if (!visibleSuggestion) return;
+        var controller = {
+          canAccept: function (event) { return canAcceptTabEverywhere(sessionId, event); },
+          accept: function () { return accept(); },
+        };
+        window.__dshPromptPredictTabAccept = controller;
+        return function () {
+          if (window.__dshPromptPredictTabAccept === controller) window.__dshPromptPredictTabAccept = null;
+        };
+      }, [visibleSuggestion, accept, sessionId]);
+
       useEffect(function () {
         if (!visibleSuggestion) return;
         var onKey = function (event) {
           if (event.isComposing) return;
-          // Tab 采纳放宽到整个页面（除其它文本输入/下拉框和对话框），
-          // 这样焦点停在上一条回复的按钮上时也能直接采纳。
-          if (event.key === "Tab" && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
-            if (!canAcceptTabEverywhere(sessionId, event)) return;
-            if (!accept()) return;
-            event.preventDefault();
-            if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
-            else event.stopPropagation();
-            return;
-          }
           if (!isComposerFocused(sessionId, event)) return;
           if (event.key === "ArrowUp" && switchEnabled && visibleSuggestion) {
             var hist = suggestionHistoryRef.current;
@@ -3016,6 +3055,7 @@ window.__ModuleLoader__.load({
       // 注册词典并绑定翻译函数：DSH 的 locale 服务会把语言切换即时应用到已挂载的界面；
       // 没有该服务（旧运行时）时保持中文兜底，不会退化成显示 key。
       watchTheme();
+      installGhostTabListener();
       // 主题/CSS 缩放可能给 ghost 写入 nowrap 或撑出视口；用最高优先级样式兜底。
       try {
         if (document.head && typeof document.createElement === "function"

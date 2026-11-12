@@ -2,6 +2,7 @@
       // 注册词典并绑定翻译函数：DSH 的 locale 服务会把语言切换即时应用到已挂载的界面；
       // 没有该服务（旧运行时）时保持中文兜底，不会退化成显示 key。
       watchTheme();
+      installGhostTabListener();
       // 主题/CSS 缩放可能给 ghost 写入 nowrap 或撑出视口；用最高优先级样式兜底。
       try {
         if (document.head && typeof document.createElement === "function"

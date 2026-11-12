@@ -388,10 +388,21 @@
           return node.isContentEditable === true || /^(INPUT|TEXTAREA|SELECT)$/.test(tag);
         };
         var active = document.activeElement;
-        if (active && isTextEntry(active) && !inEditor(active)) return false;
-        if (event && event.target && isTextEntry(event.target) && !inEditor(event.target)) return false;
-        if (active && typeof active.closest === "function"
-          && active.closest('[role="dialog"], [aria-modal="true"]')) return false;
+        var target = event && event.target;
+        var isDialog = function (node) {
+          return Boolean(node && typeof node.closest === "function"
+            && node.closest('[role="dialog"], [aria-modal="true"]'));
+        };
+        if (isDialog(active) || isDialog(target)) return false;
+        var checkTextEntry = function (node) {
+          if (!node || !isTextEntry(node) || inEditor(node)) return true;
+          // 会话切换/主题差异下，contenteditable 未必带 composer 属性；
+          // 只要不是对话框，仍按输入框处理，避免 Tab 跑掉。
+          if (node.isContentEditable) return true;
+          return false;
+        };
+        if (!checkTextEntry(active)) return false;
+        if (!checkTextEntry(target)) return false;
         return true;
       } catch { return isComposerFocused(sessionId, event); }
     }

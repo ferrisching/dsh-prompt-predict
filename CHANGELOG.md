@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.18] — 2026-11-12
+
+### Fixed
+
+- **Tab acceptance survives session switches.** Tab handling moved from a per-render component listener to a module-level controller, so switching conversations cannot leave a stale handler in place. If `findEditor` briefly points at the previous session's node, the focused contenteditable is used for insertion instead. Any contenteditable now counts as an acceptance context, and Tab is swallowed whenever the ghost is visible there even if insertion fails, so focus can no longer jump to another control.
+
 ## [0.2.17] — 2026-11-11
 
 ### Fixed

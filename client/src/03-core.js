@@ -9,6 +9,25 @@
     }
     var liveSessionId = readLiveSessionId() || null;
     var pluginPageOpener = null;   // DSH Plugins 页导航（旧运行时没有）
+
+    // 模块级 Tab 监听：不依赖 dock 组件 effect 是否在会话切换后及时重挂。
+    // 当前可见建议的 controller 放在 window 上，多个客户端模块实例共用。
+    function installGhostTabListener() {
+      if (typeof window === "undefined" || window.__dshPromptPredictTabInstalled) return;
+      window.__dshPromptPredictTabInstalled = true;
+      window.addEventListener("keydown", function (event) {
+        if (!event || event.isComposing) return;
+        if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+        var controller = window.__dshPromptPredictTabAccept;
+        if (!controller || typeof controller.canAccept !== "function" || typeof controller.accept !== "function") return;
+        if (!controller.canAccept(event)) return;
+        // 只要处于采纳上下文，就不让 Tab 把焦点移走；插入失败时保留 ghost 供重试。
+        controller.accept();
+        event.preventDefault();
+        if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
+        else event.stopPropagation();
+      }, true);
+    }
     function currentLiveSessionId() {
       var stored = readLiveSessionId();
       // undefined = 存储不可用；此时保留本模块内存里的值，不清掉它。
