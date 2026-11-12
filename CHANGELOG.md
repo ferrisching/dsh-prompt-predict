@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.19] — 2026-11-12
+
+### Fixed
+
+- **Ghost stays inside narrow composer containers.** Width is now clamped to the composer container as well as the viewport, and after rendering the actual/laid-out width ratio corrects the CSS width for transformed ancestors (for example a resized right sidebar). Long suggestions wrap inside the container instead of overflowing it.
+
 ## [0.2.18] — 2026-11-12
 
 ### Fixed

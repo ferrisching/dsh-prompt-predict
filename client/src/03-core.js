@@ -336,6 +336,7 @@
       var _p = useState(null), pos = _p[0], setPos = _p[1];
       var ghostRef = useRef(null);
       var _shift = useState({ x: 0, y: 0 }), shift = _shift[0], setShift = _shift[1];
+      var _wp = useState(0), widthPx = _wp[0], setWidthPx = _wp[1];
 
       // 渲染后按「实际视口位置 vs 期望位置」自校正：无论祖先是否有 transform、
       // 嵌套了几个包含块，都能把 ghost 拉回编辑器坐标。
@@ -348,6 +349,14 @@
         var dy = pos.top - r.top;
         if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
           setShift(function (prev) { return { x: prev.x + dx, y: prev.y + dy }; });
+        }
+        // 祖先缩放会把 CSS 宽度再放大/缩小一次；按实际/布局宽度比例反算。
+        var layoutWidth = el.offsetWidth || el.clientWidth;
+        if (pos.width > 0 && layoutWidth > 0 && r.width > 0) {
+          var ratio = r.width / layoutWidth;
+          if (ratio > 0.1 && ratio < 10 && Math.abs(r.width - pos.width) > 2) {
+            setWidthPx(pos.width / ratio);
+          }
         }
       }, [pos, suggestion]);
       var measure = useCallback(function () {
@@ -374,7 +383,13 @@
         var top = caret ? Math.max(caret.top, r.top + parseFloat(cs.paddingTop || "0")) : r.top + parseFloat(cs.paddingTop || "0");
         var width = r.width > 0 ? Math.max(80, (typeof r.right === "number" ? r.right : r.left + r.width) - padRight - left) : 0;
         var viewportWidth = Number(window.innerWidth) || 0;
-        if (width && viewportWidth > 0) width = Math.min(width, Math.max(80, viewportWidth - left - 8));
+        if (width && viewportWidth > 0) width = Math.min(width, Math.max(40, viewportWidth - left - 8));
+        // 侧边栏/窄容器：不能只按 viewport 收敛，还要服从 composer 容器宽度。
+        var scope = findComposerScope(sessionId);
+        var scopeRect = scope && typeof scope.getBoundingClientRect === "function" ? scope.getBoundingClientRect() : null;
+        if (width && scopeRect && scopeRect.width > 0) {
+          width = Math.min(width, Math.max(40, scopeRect.width - padLeft - padRight - 4));
+        }
         setPos({
           left: left,
           top: top,
@@ -489,7 +504,7 @@
         dir: "auto",
         style: {
           position: "fixed", left: pos.left + shift.x, top: pos.top + shift.y, zIndex: 60, margin: 0, padding: 0, border: 0, background: "transparent", inset: "auto",
-          width: pos.width || undefined,
+          width: widthPx || pos.width || undefined,
           pointerEvents: "none",
           fontFamily: pos.fontFamily, fontSize: pos.fontSize, lineHeight: pos.lineHeight, fontWeight: pos.fontWeight,
           // 长建议在原位折行显示，完整可见；只有采纳才写进 Lexical。

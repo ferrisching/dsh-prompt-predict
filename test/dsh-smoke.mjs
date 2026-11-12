@@ -212,6 +212,37 @@ try {
 }
 check('真实 DSH：mock LLM 回复后出现 ghost', true, '先补测试再实现');
 
+// 窄 composer：ghost 宽度必须跟随容器收缩，不能横向溢出（issue #5）
+await evalInPage(`(() => {
+  const ed = document.querySelector('[contenteditable="true"]');
+  const scope = ed.closest('[class*="composer"], [data-composer]') || ed.parentElement;
+  window.__ppScope = scope;
+  window.__ppScopeWidth = scope.style.width;
+  window.__ppScopeMax = scope.style.maxWidth;
+  scope.style.width = '260px';
+  scope.style.maxWidth = '260px';
+  window.dispatchEvent(new Event('resize'));
+})()`);
+await sleep(700);
+const narrow = await evalInPage(`(() => {
+  const g = document.querySelector('[data-prompt-predict-ghost]');
+  const ed = document.querySelector('[contenteditable="true"]');
+  if (!g || !ed) return null;
+  const gr = g.getBoundingClientRect();
+  const er = ed.getBoundingClientRect();
+  return { ghostLeft: gr.left, ghostRight: gr.right, editorLeft: er.left, editorRight: er.right, width: gr.width };
+})()`);
+check('真实 DSH：窄 composer 中 ghost 不横向溢出',
+  narrow && narrow.ghostLeft >= narrow.editorLeft - 2 && narrow.ghostRight <= narrow.editorRight + 2,
+  JSON.stringify(narrow));
+await evalInPage(`(() => {
+  window.__ppScope.style.width = window.__ppScopeWidth;
+  window.__ppScope.style.maxWidth = window.__ppScopeMax;
+  window.dispatchEvent(new Event('resize'));
+})()`);
+await sleep(500);
+
+
 // 外部输入框聚焦时 Tab 不应采纳
 await evalInPage(`(() => {
   let i = document.getElementById('dsh-smoke-input');
