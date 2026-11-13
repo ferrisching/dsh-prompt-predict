@@ -10,6 +10,12 @@ profile and a browser.
 | `npm run test:smoke` | Real DSH via disposable profile, mock LLM and headless Edge/CDP | 18 checks |
 | `npm run test:sidebar` | Opt-in probe: real DSH + `dsh-better-sidebar`, prints sidebar DOM | diagnostic, no ghost assertion |
 
+## Verification history
+
+| Date | Plugin | DSH | Real-DSH smoke |
+|---|---|---|---|
+| 2026-11-13 | 0.2.21 | 0.2.2-rc.2 (desktop nightly) | 19/19 pass |
+
 ## Host and client tests
 
 `test/predict.mjs` covers message trimming, suggestion normalization,
