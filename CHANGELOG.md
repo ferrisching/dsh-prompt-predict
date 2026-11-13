@@ -138,7 +138,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- **Compatibility verified on DSH `0.2.1-rc.3`** (the installed desktop build and the current nightly feed), not just `0.2.1-rc.2`.
+- **Compatibility was verified against the then-current DSH nightly**, not just `0.2.1-rc.2`; see the README for the version verified by the current release.
 - **History rows are now a real `<button>`** with the copy control as a sibling, instead of a `role=button` container; keyboard and screen-reader semantics are cleaner.
 - **NDJSON deltas are coalesced every 40 ms** on the Host, with a forced flush before `reset`, `done` and `error`, so fast models no longer produce one event per token.
 - **The client source is split into `client/src/` fragments**, assembled into the single `client/client.js` by `npm run build:client` (`pretest` / `prepack` run it automatically). The generated bundle is byte-identical; behaviour is unchanged.

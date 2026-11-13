@@ -137,7 +137,7 @@
 
 ### 变更
 
-- **兼容性已在 DSH `0.2.1-rc.3` 上验证**（本机桌面版与当前 nightly 源均为 rc.3），不再只写 rc.2。
+- **兼容性已针对当时最新的 DSH nightly 验证**，不再只写 `0.2.1-rc.2`；当前版本验证见 README。
 - **历史行改成真正的 `<button>`**，复制按钮作为兄弟节点，不再用 `role=button` 容器，键盘和读屏语义更干净。
 - **Host 的 NDJSON delta 每 40ms 合并一次**，并在 `reset`/`done`/`error` 前强制 flush；快速模型不再逐 token 发一行。
 - **客户端源码拆分到 `client/src/` 片段**，由 `npm run build:client` 拼接成单个 `client/client.js`（`pretest` / `prepack` 自动执行）。生成物逐字节一致，行为不变。
