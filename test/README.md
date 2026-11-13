@@ -28,7 +28,8 @@ settings and both locales.
 npm run test:smoke
 ```
 
-The suite creates a temporary DSH profile, installs this repository as a tarball,
+Before running the suite, check the installed DSH version (`dsh --version`); the
+smoke result applies to that exact host version. The suite creates a temporary DSH profile, installs this repository as a tarball,
 starts a local mock LLM, launches headless Edge on a remote-debugging port and
 drives the real composer over CDP.
 

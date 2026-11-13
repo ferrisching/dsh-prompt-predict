@@ -9,6 +9,27 @@ to the public release process; internal notes stay outside the repository.
 - Write access to `ferrisching/dsh-prompt-predict` on GitHub and npm.
 - npm account `ferrisching` with a passkey-capable browser for approval.
 
+## 0. Confirm the running DSH version
+
+Record the DSH version before touching the plugin version, and test against that
+exact version:
+
+```bash
+dsh --version
+npm view @deepseek-ai/dsh dist-tags --json
+gh release list --repo deepseek-ai/deepseek-harness --limit 5
+```
+
+For the desktop nightly channel, also read the feed:
+
+```bash
+curl -sL https://download.deepseek.com/dsh-desk/feeds/mac-arm64/nightly-mac.yml | head -3
+```
+
+If the installed version is not the latest on its channel, decide explicitly
+whether to upgrade first; do not silently test an unknown mix. Put the tested
+DSH version in the release notes or the release commit body.
+
 ## 1. Prepare the version
 
 1. Bump `version` in `package.json`.
