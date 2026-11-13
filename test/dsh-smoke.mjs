@@ -12,7 +12,7 @@
  */
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +23,7 @@ const DSH_CLI = process.env.DSH_SMOKE_DSH
 const EDGE = process.env.DSH_SMOKE_EDGE
   || '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
 const KEEP = process.env.DSH_SMOKE_KEEP === '1';
+const SIDEBAR = process.env.DSH_SMOKE_SIDEBAR === '1';
 const tmp = mkdtempSync(join(tmpdir(), 'dsh-smoke-'));
 const children = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -102,6 +103,26 @@ const tgz = join(tmp, packOut.trim().split('\n').pop());
 execFileSync(DSH_CLI, ['plugin', '--profile', 'smoke', 'add', tgz], {
   env: { ...process.env, DSH_HOME: home }, stdio: 'ignore',
 });
+
+if (SIDEBAR) {
+  try {
+    execFileSync(DSH_CLI, ['plugin', '--profile', 'smoke', 'add', 'dsh-better-sidebar@0.30.1', '--config.minimumReleaseAge=0'], {
+      env: { ...process.env, DSH_HOME: home }, stdio: 'ignore',
+    });
+    const profilePkgPath = join(home, 'profiles', 'smoke', 'package.json');
+    const profilePkg = JSON.parse(readFileSync(profilePkgPath, 'utf8'));
+    profilePkg.dsh = profilePkg.dsh || {};
+    profilePkg.dsh.profile = profilePkg.dsh.profile || {};
+    profilePkg.dsh.profile.bundles = profilePkg.dsh.profile.bundles || [];
+    if (!profilePkg.dsh.profile.bundles.includes('dsh-better-sidebar')) {
+      profilePkg.dsh.profile.bundles.push('dsh-better-sidebar');
+    }
+    writeFileSync(profilePkgPath, JSON.stringify(profilePkg, null, 2) + '\n');
+    console.log('SIDEBAR_INSTALL ok');
+  } catch (error) {
+    console.log('SIDEBAR_INSTALL_FAIL', String(error && error.message || error).slice(0, 300));
+  }
+}
 writeFileSync(join(home, 'profiles', 'smoke', 'cordis.patch.yml'), `- id: agent-default-model
   config:
     provider: smoke
@@ -235,6 +256,29 @@ const narrow = await evalInPage(`(() => {
 check('真实 DSH：窄 composer 中 ghost 不横向溢出',
   narrow && narrow.ghostLeft >= narrow.editorLeft - 2 && narrow.ghostRight <= narrow.editorRight + 2,
   JSON.stringify(narrow));
+// 叠加祖先缩放：模拟侧边栏/UI 缩放，ghost 仍应在编辑器范围内
+await evalInPage(`(() => {
+  window.__ppScopeTransform = window.__ppScope.style.transform;
+  window.__ppScope.style.transformOrigin = 'top left';
+  window.__ppScope.style.transform = 'scale(0.8)';
+  window.dispatchEvent(new Event('resize'));
+})()`);
+await sleep(700);
+const scaled = await evalInPage(`(() => {
+  const g = document.querySelector('[data-prompt-predict-ghost]');
+  const ed = document.querySelector('[contenteditable="true"]');
+  if (!g || !ed) return null;
+  const gr = g.getBoundingClientRect();
+  const er = ed.getBoundingClientRect();
+  return { ghostLeft: gr.left, ghostRight: gr.right, editorLeft: er.left, editorRight: er.right, width: gr.width };
+})()`);
+check('真实 DSH：缩放 + 窄容器中 ghost 不溢出',
+  scaled && scaled.ghostLeft >= scaled.editorLeft - 3 && scaled.ghostRight <= scaled.editorRight + 3,
+  JSON.stringify(scaled));
+await evalInPage(`(() => {
+  window.__ppScope.style.transform = window.__ppScopeTransform || '';
+})()`);
+await sleep(300);
 await evalInPage(`(() => {
   window.__ppScope.style.width = window.__ppScopeWidth;
   window.__ppScope.style.maxWidth = window.__ppScopeMax;
@@ -242,6 +286,66 @@ await evalInPage(`(() => {
 })()`);
 await sleep(500);
 
+
+// 几何矩阵：不同宽度/缩放、连续 resize、以及页面存在诱饵 composer
+const ghostBounds = () => evalInPage(`(() => {
+  const g = document.querySelector('[data-prompt-predict-ghost]');
+  const ed = document.querySelector('[contenteditable="true"]');
+  if (!g || !ed) return null;
+  const gr = g.getBoundingClientRect();
+  const er = ed.getBoundingClientRect();
+  return { ghostLeft: gr.left, ghostRight: gr.right, editorLeft: er.left, editorRight: er.right, width: gr.width, height: gr.height };
+})()`);
+const withinEditor = (m, tolerance = 4) =>
+  Boolean(m && m.ghostLeft >= m.editorLeft - tolerance && m.ghostRight <= m.editorRight + tolerance);
+
+for (const scenario of [
+  { width: '260px', scale: 1.25 },
+  { width: '180px', scale: 1.5 },
+  { width: '600px', scale: 1 },
+  { width: '220px', scale: 1 },
+]) {
+  await evalInPage(`(() => {
+    const scope = window.__ppScope;
+    scope.style.transformOrigin = 'top left';
+    scope.style.transform = ${JSON.stringify(`scale(${scenario.scale})`)};
+    scope.style.width = ${JSON.stringify(scenario.width)};
+    scope.style.maxWidth = ${JSON.stringify(scenario.width)};
+    window.dispatchEvent(new Event('resize'));
+  })()`);
+  await sleep(650);
+  const m = await ghostBounds();
+  check(`真实 DSH：宽度 ${scenario.width} + scale(${scenario.scale}) 中 ghost 不溢出`,
+    withinEditor(m), JSON.stringify(m));
+}
+
+// 页面插入一个位于最左侧的诱饵 composer；ghost 必须仍跟随自己的 composer
+await evalInPage(`(() => {
+  const decoy = document.createElement('div');
+  decoy.id = 'pp-decoy-composer';
+  decoy.setAttribute('data-composer-input', 'true');
+  decoy.setAttribute('contenteditable', 'true');
+  decoy.style.cssText = 'position:fixed;left:0;top:0;width:160px;height:32px;opacity:0;pointer-events:none;';
+  document.body.appendChild(decoy);
+  window.dispatchEvent(new Event('resize'));
+})()`);
+await sleep(650);
+const withDecoy = await ghostBounds();
+check('真实 DSH：存在诱饵 composer 时 ghost 仍跟随自己的输入框',
+  withinEditor(withDecoy), JSON.stringify(withDecoy));
+await evalInPage(`document.getElementById('pp-decoy-composer')?.remove(); window.dispatchEvent(new Event('resize'));`);
+await sleep(400);
+
+// 恢复原始几何
+await evalInPage(`(() => {
+  const scope = window.__ppScope;
+  scope.style.transform = window.__ppScopeTransform || '';
+  scope.style.transformOrigin = '';
+  scope.style.width = window.__ppScopeWidth;
+  scope.style.maxWidth = window.__ppScopeMax;
+  window.dispatchEvent(new Event('resize'));
+})()`);
+await sleep(500);
 
 // 外部输入框聚焦时 Tab 不应采纳
 await evalInPage(`(() => {
@@ -333,6 +437,95 @@ check('真实 DSH：Tab 采纳多行代码后换行/缩进进入编辑器',
   JSON.stringify(editorAfterCode).slice(0, 300));
 
 check('mock LLM 至少收到 2 次预测请求', llmCalls.filter((c) => c.predict).length >= 2, String(llmCalls.length));
+
+if (SIDEBAR) {
+  const dom = await evalInPage(`(() => ({
+    buttons: [...document.querySelectorAll('button')].map((b) => ({
+      text: (b.textContent || '').trim().slice(0, 40),
+      aria: b.getAttribute('aria-label'),
+      title: b.getAttribute('title'),
+      cls: String(b.className || '').slice(0, 80),
+    })).filter((b) => b.text || b.aria || b.title),
+    text: document.body.innerText.slice(0, 2000),
+    rightbar: [...document.querySelectorAll('[class*="sidebar" i], [data-sidebar], [data-dock]')].map((e) => ({
+      tag: e.tagName, cls: String(e.className || '').slice(0, 100), attrs: [...e.attributes].slice(0, 8).map((a) => a.name + '=' + a.value).join(' '),
+    })).slice(-40),
+  }))()`);
+  console.log('SIDEBAR_DEBUG', JSON.stringify(dom, null, 2).slice(0, 12000));
+
+  const opened = await evalInPage(`(() => {
+    const card = [...document.querySelectorAll('button, [role="button"], [title]')]
+      .find((el) => (el.textContent || '').trim() === '侧边对话(beta)' || el.getAttribute('title') === '侧边对话(beta)');
+    if (!card) return false;
+    card.click();
+    return true;
+  })()`);
+  await sleep(1200);
+  const created = await evalInPage(`(() => {
+    const b = [...document.querySelectorAll('button')].find((el) => el.getAttribute('aria-label') === '新建对话');
+    if (!b) return false;
+    b.click();
+    return true;
+  })()`);
+  await sleep(1500);
+  const side = await evalInPage(`(() => ({
+    opened: ${opened},
+    created: ${created},
+    editors: [...document.querySelectorAll('[contenteditable="true"]')].map((ed) => {
+      const r = ed.getBoundingClientRect();
+      return { top: r.top, left: r.left, width: r.width, height: r.height, text: (ed.textContent || '').slice(0, 40), attrs: [...ed.attributes].slice(0, 5).map((a) => a.name + '=' + a.value).join(' ') };
+    }),
+    buttons: [...document.querySelectorAll('button')].map((b) => ({ text: (b.textContent || '').trim().slice(0, 30), aria: b.getAttribute('aria-label') })).filter((b) => b.text || b.aria),
+    text: document.body.innerText.slice(0, 1500),
+  }))()`);
+  console.log('SIDEBAR_AFTER_CLICK', JSON.stringify(side, null, 2).slice(0, 12000));
+
+  const deep = await evalInPage(`(() => {
+    const editors = [];
+    const seen = new Set();
+    const walk = (root, path) => {
+      if (!root || seen.has(root)) return;
+      seen.add(root);
+      try {
+        for (const el of root.querySelectorAll('[data-composer-input], [contenteditable], textarea, iframe')) {
+          const r = el.getBoundingClientRect();
+          editors.push({ path, tag: el.tagName, cls: String(el.className || ''), top: r.top, left: r.left, width: r.width, height: r.height, attrs: [...el.attributes].slice(0, 8).map((a) => a.name + '=' + a.value).join(' ') });
+        }
+        for (const el of root.querySelectorAll('*')) {
+          if (el.shadowRoot) walk(el.shadowRoot, path + '>#shadow');
+          if (el.tagName === 'IFRAME') { try { walk(el.contentDocument, path + '>iframe'); } catch { /* cross-origin */ } }
+        }
+      } catch { /* ignore */ }
+    };
+    walk(document, 'doc');
+    const sideEls = [...document.querySelectorAll('[class*="side" i], [data-sidebar], [class*="dock"]')].slice(-30).map((el) => ({ tag: el.tagName, cls: String(el.className || '').slice(0, 100), text: (el.innerText || '').slice(0, 80) }));
+    return { editors, sideEls };
+  })()`);
+  console.log('SIDEBAR_DEEP', JSON.stringify(deep, null, 2).slice(0, 15000));
+
+  await evalInPage(`document.querySelector('._4BEzFa_sidechatComposerInput')?.focus()`);
+  await send('Input.insertText', { text: '侧边栏测试' });
+  await sleep(300);
+  await evalInPage(`document.querySelector('._4BEzFa_sidechatSendBtn')?.click()`);
+  await sleep(3000);
+  const sideGhost = await evalInPage(`(() => {
+    const g = document.querySelector('[data-prompt-predict-ghost]');
+    const composer = document.querySelector('._4BEzFa_sidechat');
+    const input = document.querySelector('._4BEzFa_sidechatComposerInput');
+    const gr = g && g.getBoundingClientRect();
+    const cr = composer && composer.getBoundingClientRect();
+    const ir = input && input.getBoundingClientRect();
+    return {
+      ghosts: document.querySelectorAll('[data-prompt-predict-ghost]').length,
+      ghostText: g && (g.querySelector('[data-prompt-predict-text]')?.textContent || g.textContent),
+      ghost: gr && { top: gr.top, left: gr.left, right: gr.right, width: gr.width },
+      composer: cr && { top: cr.top, left: cr.left, right: cr.right, width: cr.width },
+      input: ir && { top: ir.top, left: ir.left, right: ir.right, width: ir.width },
+      sideText: composer && (composer.innerText || '').slice(0, 300),
+    };
+  })()`);
+  console.log('SIDEBAR_GHOST', JSON.stringify(sideGhost, null, 2).slice(0, 8000));
+}
 
 ws.close();
 llm.close();

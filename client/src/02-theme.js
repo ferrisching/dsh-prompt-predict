@@ -233,6 +233,33 @@
       return true;
     }
 
+    // 从某个 slot 节点往上找最近的 composer 编辑器，优先同会话、可见节点。
+    function findEditorNear(node, sessionId) {
+      var cur = node;
+      for (var depth = 0; depth < 8 && cur; depth += 1) {
+        var list = [];
+        try {
+          list = Array.from(cur.querySelectorAll('[data-composer-input="true"]') || []);
+        } catch { list = []; }
+        if (list.length) {
+          var visible = list.filter(isActuallyVisible);
+          var pool = visible.length ? visible : list;
+          if (sessionId) {
+            var scoped = pool.filter(function (el) {
+              try {
+                var host = el.closest && el.closest('[data-conversation-session]');
+                return host && host.getAttribute('data-conversation-session') === sessionId;
+              } catch { return false; }
+            });
+            if (scoped.length) pool = scoped;
+          }
+          if (pool.length) return pool[0];
+        }
+        cur = cur.parentElement;
+      }
+      return findEditor(sessionId);
+    }
+
     function findEditor(sessionId) {
       var all = [];
       try {

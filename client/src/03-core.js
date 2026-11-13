@@ -360,7 +360,8 @@
         }
       }, [pos, suggestion]);
       var measure = useCallback(function () {
-        var ed = findEditor(sessionId);
+        // 从 ghost 自己所在的 slot 往上找最近的 composer，避免侧边栏场景量到主输入框。
+        var ed = ghostRef.current ? findEditorNear(ghostRef.current, sessionId) : findEditor(sessionId);
         // 编辑器短暂不可见（焦点/滚动切换）时保留上一帧位置，避免 ghost 闪一下消失。
         if (!ed) return;
         var r = ed.getBoundingClientRect();
@@ -385,7 +386,7 @@
         var viewportWidth = Number(window.innerWidth) || 0;
         if (width && viewportWidth > 0) width = Math.min(width, Math.max(40, viewportWidth - left - 8));
         // 侧边栏/窄容器：不能只按 viewport 收敛，还要服从 composer 容器宽度。
-        var scope = findComposerScope(sessionId);
+        var scope = (ed.closest && ed.closest('[class*="composer"], [data-composer]')) || ed.parentElement;
         var scopeRect = scope && typeof scope.getBoundingClientRect === "function" ? scope.getBoundingClientRect() : null;
         if (width && scopeRect && scopeRect.width > 0) {
           width = Math.min(width, Math.max(40, scopeRect.width - padLeft - padRight - 4));

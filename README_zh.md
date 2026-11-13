@@ -65,7 +65,7 @@
 **或者用 dsh CLI**——想装某个已发布版本就用 pnpm 的 `@版本` 语法：
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.19
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.20
 ```
 
 `--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`），**装完重启 DSH 生效**。
@@ -91,8 +91,8 @@ dsh plugin --profile desktop add dsh-prompt-predict@latest
 **完全一致**的 tarball（`shasum` 与 registry 相同），适合离线机器或需要自行校验产物的场景：
 
 ```bash
-gh release download v0.2.19 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.19.tgz
+gh release download v0.2.20 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.20.tgz
 ```
 
 与上面 CLI 路径同样的注意点：请自己把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles`，
@@ -213,14 +213,16 @@ pnpm add /path/to/dsh-prompt-predict
 
 ### 真实 DSH 冒烟（macOS，可选）
 
-`npm run test:smoke` 会创建临时 DSH profile、把本仓库打成 tgz 装进去、启动本地 mock LLM，并用无头 Edge 通过 CDP 驱动真实 composer。验证：真实回复后出现 ghost、焦点在其它输入框时 `Tab` 不采纳、composer 聚焦时 `Tab` 采纳、reroll 换成新建议、暂停隐藏并在恢复后重现。需要安装 DeepSeek Harness App 与 Microsoft Edge；可用 `DSH_SMOKE_DSH`、`DSH_SMOKE_EDGE` 覆盖路径。它不进入 `npm test`。
+`npm run test:smoke` 会创建临时 DSH profile、把本仓库打成 tgz 装进去、启动本地 mock LLM，并用无头 Edge 通过 CDP 驱动真实 composer。覆盖 ghost 显示、焦点作用域的 Tab 采纳、reroll、↓/↑ 切换、暂停、多行代码，以及窄容器/缩放几何矩阵（260/220/180/600px、`scale(0.8/1.25/1.5)`、诱饵 composer）。需要安装 DeepSeek Harness App 与 Microsoft Edge；可用 `DSH_SMOKE_DSH`、`DSH_SMOKE_EDGE` 覆盖路径。它不进入 `npm test`。
+
+`npm run test:sidebar` 是独立的右侧栏探针（opt-in）：额外安装 `dsh-better-sidebar@0.30.1`，打开 **插件 → 侧边对话**，新建线程、发送消息，并打印真实 DOM。当前发现：该版本的侧边对话使用 `TEXTAREA._4BEzFa_sidechatComposerInput`，没有挂载本插件的 composer dock，因此不会产生插件 ghost；探针只做诊断，不断言右侧栏 ghost。完整测试矩阵与 issue #6 调查记录见 [test/README.md](test/README.md)。
 
 ## 🛠️ 开发
 
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 71 项：51 项 Host 端 + 20 项客户端渲染冒烟
+npm test        # 141 项 Host 端 + 225 项客户端渲染
 ```
 
 ```
@@ -234,8 +236,10 @@ npm test        # 71 项：51 项 Host 端 + 20 项客户端渲染冒烟
 ├── client/
 │   └── client.js        客户端：输入框 ghost text 覆盖层 + 设置页
 ├── test/
-│   ├── predict.mjs      51 项用例：文本裁剪、建议清洗、路由继承、设置校验、降级重试、去重、双语错误、接口端到端
-│   └── client-render.mjs  20 项用例：极简 React 替身渲染 ghost 覆盖层与设置页，含中英双语与词典自检
+│   ├── predict.mjs      141 项用例：文本裁剪、建议清洗、路由继承、设置校验、降级重试、去重、双语错误、接口端到端
+│   ├── client-render.mjs  225 项用例：极简 React 替身渲染 ghost/设置页，覆盖 Tab 焦点矩阵、几何、输入法/粘贴/附件、中英双语
+│   ├── dsh-smoke.mjs      18 项真实 DSH 检查（可选；也承载 opt-in 右侧栏探针）
+│   └── README.md          测试矩阵、真实 DSH 冒烟与右侧栏探针说明
 ├── scripts/
 │   ├── install.sh       一键安装 / 升级
 │   └── update.sh        把 profile 升级到 npm 最新版

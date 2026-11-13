@@ -64,7 +64,7 @@ The plugin is published on npm. Options are ordered by convenience.
 **Or the dsh CLI** — pin any published version with pnpm's `@version` syntax:
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.19
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.20
 ```
 
 Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build), then **restart DSH**.
@@ -92,8 +92,8 @@ tarball that is on npm (`shasum` matches the registry), which is handy for offli
 pinning an artifact you can verify:
 
 ```bash
-gh release download v0.2.19 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.19.tgz
+gh release download v0.2.20 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.20.tgz
 ```
 
 Same caveat as the CLI route above: add `"dsh-prompt-predict"` to `dsh.profile.bundles` yourself,
@@ -214,14 +214,16 @@ The client is built from ordered fragments in `client/src/` (`npm run build:clie
 
 ### Real-DSH smoke test (macOS, optional)
 
-`npm run test:smoke` boots a disposable DSH profile, installs this repo as a local tarball, starts a local mock LLM and drives a headless Edge via CDP. It checks that: a real reply produces a ghost, `Tab` is ignored while another input is focused, `Tab` accepts inside the composer, reroll changes the suggestion, and pause hides/restores it. Requires the DeepSeek Harness app and Microsoft Edge; override paths with `DSH_SMOKE_DSH` and `DSH_SMOKE_EDGE`. It is deliberately not part of `npm test`.
+`npm run test:smoke` boots a disposable DSH profile, installs this repo as a local tarball, starts a local mock LLM and drives a headless Edge via CDP. It covers ghost display, focus-scoped Tab acceptance, reroll, ↓/↑ switching, pause, multi-line code, and a geometry matrix for narrow/scaled composers (260/220/180/600 px, `scale(0.8/1.25/1.5)`, and a decoy composer). Requires the DeepSeek Harness app and Microsoft Edge; override paths with `DSH_SMOKE_DSH` and `DSH_SMOKE_EDGE`. It is deliberately not part of `npm test`.
+
+`npm run test:sidebar` is a separate opt-in probe for the real right sidebar. It additionally installs `dsh-better-sidebar@0.30.1`, opens **Plugins → side chat**, creates a thread, sends a message, and prints the real DOM. Current finding: that version's side chat uses `TEXTAREA._4BEzFa_sidechatComposerInput` and does not mount the plugin composer dock, so it produces zero plugin ghosts; the probe is diagnostic and makes no right-sidebar ghost assertion. See [test/README.md](test/README.md) for the full test matrix and the issue #6 investigation notes.
 
 ## 🛠️ Development
 
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 71 cases: 51 host-side + 20 client render smoke tests
+npm test        # 141 host-side + 225 client render cases
 ```
 
 ```
@@ -235,8 +237,10 @@ npm test        # 71 cases: 51 host-side + 20 client render smoke tests
 ├── client/
 │   └── client.js        Client: composer ghost-text overlay + settings page
 ├── test/
-│   ├── predict.mjs      51 cases: trimming, cleanup, route inheritance, settings validation, degrade-retry, dedup, bilingual errors, HTTP end-to-end
-│   └── client-render.mjs  20 cases: renders the ghost overlay and settings page through a tiny React stand-in, incl. both locales and dictionary self-checks
+│   ├── predict.mjs      141 cases: trimming, cleanup, route inheritance, settings validation, degrade-retry, dedup, bilingual errors, HTTP end-to-end
+│   ├── client-render.mjs  225 cases: ghost/settings rendering through a tiny React stand-in, Tab focus matrix, geometry, IME/paste/attachments, both locales
+│   ├── dsh-smoke.mjs      18 real-DSH checks (optional; also hosts the opt-in sidebar probe)
+│   └── README.md          test matrix, real-DSH smoke and right-sidebar probe notes
 ├── scripts/
 │   ├── install.sh       One-shot install from a local pack
 │   └── update.sh        Upgrade a profile to the npm latest

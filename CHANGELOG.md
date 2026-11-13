@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.20] — 2026-11-13
+
+### Fixed
+
+- **Side-panel ghosts anchor to their own composer.** The overlay now walks up from its own slot to the nearest `[data-composer-input]` instead of choosing an editor globally, and derives its width bound from that editor's composer container. This prevents a right-sidebar suggestion from being measured and positioned against the main composer.
+
 ## [0.2.19] — 2026-11-12
 
 ### Fixed
