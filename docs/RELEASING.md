@@ -8,6 +8,16 @@ to the public release process; internal notes stay outside the repository.
 - Node.js and npm available; the repository has zero runtime dependencies.
 - Write access to `ferrisching/dsh-prompt-predict` on GitHub and npm.
 - npm account `ferrisching` with a passkey-capable browser for approval.
+- **Git identity uses the GitHub noreply address**, never a personal email:
+  `343508463+ferrisching@users.noreply.github.com`. This repository sets it
+  locally together with `user.useConfigOnly=true`. Before publishing, verify:
+
+  ```bash
+  git log --format='%ae%n%ce' | sort -u
+  ```
+
+  Only the noreply address may appear. Never rewrite this back to a personal
+  address, and do not add a global email fallback for this repository.
 
 ## 0. Confirm the running DSH version
 
