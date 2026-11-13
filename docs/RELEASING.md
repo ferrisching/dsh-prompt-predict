@@ -9,7 +9,7 @@ to the public release process; internal notes stay outside the repository.
 - Write access to `ferrisching/dsh-prompt-predict` on GitHub and npm.
 - npm account `ferrisching` with a passkey-capable browser for approval.
 - **Git identity uses the GitHub noreply address**, never a personal email:
-  `343508463+ferrisching@users.noreply.github.com`. This repository sets it
+  `ferrisching@users.noreply.github.com`. This repository sets it
   locally together with `user.useConfigOnly=true`. Before publishing, verify:
 
   ```bash
