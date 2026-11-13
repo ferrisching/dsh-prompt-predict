@@ -674,7 +674,9 @@ window.__ModuleLoader__.load({
         for (var depth = 0; depth < 6 && node; depth += 1) {
           var cs = getComputedStyle(node);
           if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-          if (node.hidden || (node.getAttribute && node.getAttribute("aria-hidden") === "true")) return false;
+          if (node.hidden || node.inert
+            || (node.hasAttribute && node.hasAttribute("inert"))
+            || (node.getAttribute && node.getAttribute("aria-hidden") === "true")) return false;
           node = node.parentElement;
         }
         if (typeof document.elementFromPoint === "function") {
@@ -688,6 +690,22 @@ window.__ModuleLoader__.load({
     }
 
     // 从某个 slot 节点往上找最近的 composer 编辑器，优先同会话、可见节点。
+    // 只检查祖先的 display/visibility/opacity/inert/aria-hidden，不做命中测试；
+    // 用于判断 ghost 自己所在的 slot 是否位于隐藏/后台 pane。
+    function isChainHidden(el) {
+      var node = el;
+      for (var depth = 0; depth < 10 && node; depth += 1) {
+        try {
+          var cs = getComputedStyle(node);
+          if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return true;
+          if (node.hidden || node.inert || (node.hasAttribute && node.hasAttribute("inert"))
+            || (node.getAttribute && node.getAttribute("aria-hidden") === "true")) return true;
+        } catch { return true; }
+        node = node.parentElement;
+      }
+      return false;
+    }
+
     function findEditorNear(node, sessionId) {
       var cur = node;
       for (var depth = 0; depth < 8 && cur; depth += 1) {
@@ -697,7 +715,9 @@ window.__ModuleLoader__.load({
         } catch { list = []; }
         if (list.length) {
           var visible = list.filter(isActuallyVisible);
-          var pool = visible.length ? visible : list;
+          // 隐藏/后台 pane 的编辑器不能作为锚点，继续向上找可见 composer。
+          if (!visible.length) { cur = cur.parentElement; continue; }
+          var pool = visible;
           if (sessionId) {
             var scoped = pool.filter(function (el) {
               try {
@@ -1285,6 +1305,8 @@ window.__ModuleLoader__.load({
         }
       }, [pos, suggestion]);
       var measure = useCallback(function () {
+        // ghost 自己所在的 slot 若在隐藏/后台 pane，直接不渲染，避免它画到可见区域。
+        if (ghostRef.current && isChainHidden(ghostRef.current)) { setPos(null); return; }
         // 从 ghost 自己所在的 slot 往上找最近的 composer，避免侧边栏场景量到主输入框。
         var ed = ghostRef.current ? findEditorNear(ghostRef.current, sessionId) : findEditor(sessionId);
         // 编辑器短暂不可见（焦点/滚动切换）时保留上一帧位置，避免 ghost 闪一下消失。
@@ -1331,11 +1353,49 @@ window.__ModuleLoader__.load({
         measure();
         var ed = findEditor(sessionId);
         var ro = null;
-        if (typeof ResizeObserver !== "undefined" && ed) { ro = new ResizeObserver(measure); ro.observe(ed); }
+        if (typeof ResizeObserver !== "undefined" && ed) {
+          ro = new ResizeObserver(measure);
+          ro.observe(ed);
+          var scope = findComposerScope(sessionId);
+          if (scope && scope !== ed) ro.observe(scope);
+        }
         window.addEventListener("resize", measure, true);
         window.addEventListener("scroll", measure, true);
+        // 侧栏关闭会移动 composer 但未必改变尺寸：监听 body 的 DOM/属性变化并防抖重测。
+        var pending = null;
+        var schedule = function () {
+          if (pending) return;
+          pending = setTimeout(function () { pending = null; measure(); }, 50);
+        };
+        var mo = null;
+        if (typeof MutationObserver !== "undefined" && document.body) {
+          mo = new MutationObserver(schedule);
+          mo.observe(document.body, {
+            childList: true, subtree: true,
+            attributes: true, attributeFilter: ["class", "style", "inert", "aria-hidden"],
+          });
+        }
+        // 分割条/侧栏拖拽结束后再测一次最终布局；拖拽中间态不能作为最终位置。
+        var docTarget = typeof document.addEventListener === "function" ? document : null;
+        var onDragEnd = function () { schedule(); };
+        if (docTarget) {
+          docTarget.addEventListener("pointerup", onDragEnd, true);
+          docTarget.addEventListener("pointercancel", onDragEnd, true);
+          docTarget.addEventListener("transitionend", onDragEnd, true);
+        }
+        window.addEventListener("mouseup", onDragEnd, true);
+        window.addEventListener("blur", onDragEnd, true);
         return function () {
+          if (pending) clearTimeout(pending);
+          if (mo) mo.disconnect();
           if (ro) ro.disconnect();
+          if (docTarget) {
+            docTarget.removeEventListener("pointerup", onDragEnd, true);
+            docTarget.removeEventListener("pointercancel", onDragEnd, true);
+            docTarget.removeEventListener("transitionend", onDragEnd, true);
+          }
+          window.removeEventListener("mouseup", onDragEnd, true);
+          window.removeEventListener("blur", onDragEnd, true);
           window.removeEventListener("resize", measure, true);
           window.removeEventListener("scroll", measure, true);
         };

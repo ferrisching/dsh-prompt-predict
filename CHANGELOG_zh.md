@@ -5,6 +5,14 @@
 
 [English](CHANGELOG.md)
 
+## [0.2.21] — 2026-11-13
+
+### 修复
+
+- **陈旧会话不再产生 HTTP 404。** 已释放/未知会话现在返回 200 的 `{ ok: false, code: "session_not_found" }` 信封；客户端本来就会将其视为静默的陈旧状态。这样浏览器 Console 里不再出现间歇性红色 404，错误码保持不变。
+- **分割条/侧栏拖拽后重新测量。** 拖动分割条或右侧栏可能移动并缩放 composer，但不触发 `window.resize`，且拖拽中间态不是最终布局。ghost 可见期间现在监听 body 的 DOM/属性变化（防抖）、composer scope，以及 `pointerup` / `pointercancel` / `transitionend` / 窗口 `blur`，按最终布局重新对齐。新增回归测试：编辑器从 x=100 移到 x=140，ghost 跟着移动。
+- **隐藏/后台 composer pane 中的 ghost 不再渲染。** 就近查找只接受可见编辑器，并拒绝 `inert` / `aria-hidden` 祖先；如果 ghost 自己的 slot 位于隐藏 pane，则直接不渲染。避免后台会话的建议被画在离屏的旧编辑器里。
+
 ## [0.2.20] — 2026-11-13
 
 ### 修复

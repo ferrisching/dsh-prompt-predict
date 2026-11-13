@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.21] — 2026-11-13
+
+### Fixed
+
+- **Stale sessions no longer surface as HTTP 404s.** A released/unknown session now returns a 200 `{ ok: false, code: "session_not_found" }` envelope; the client already treats it as a silent stale state. This removes the intermittent red 404 in the browser Console while keeping the same error code.
+- **Re-measure after splitter/sidebar reflows.** Dragging a splitter or the right sidebar can move and resize the composer while producing no `window.resize`, and the drag's intermediate layout is not its final one. While a ghost is visible the plugin watches body DOM/attribute changes (debounced), the composer scope, and `pointerup` / `pointercancel` / `transitionend` / window `blur`, then re-aligns to the final layout. A regression test moves the editor from x=100 to x=140 and verifies the ghost follows.
+- **Ignore ghosts in hidden/background composer panes.** The nearest-composer lookup now only accepts visible editors and rejects `inert`/`aria-hidden` ancestors; if the ghost's own slot is inside a hidden pane, it renders nothing. This stops a background session's suggestion from being painted inside a stale off-screen editor.
+
 ## [0.2.20] — 2026-11-13
 
 ### Fixed

@@ -233,6 +233,34 @@ try {
 }
 check('真实 DSH：mock LLM 回复后出现 ghost', true, '先补测试再实现');
 
+// 打开再关闭右侧栏：布局位移后 ghost 必须重新贴回编辑器
+const openedSidebar = await evalInPage(`(() => {
+  const b = document.querySelector('button[aria-label="打开右侧边栏"]');
+  if (!b) return false;
+  b.click();
+  return true;
+})()`);
+if (openedSidebar) {
+  await sleep(1200);
+  await evalInPage(`document.querySelector('button[aria-label="收起右侧边栏"]')?.click()`);
+  await sleep(1200);
+  const afterToggle = await evalInPage(`(() => {
+    const g = document.querySelector('[data-prompt-predict-ghost]');
+    const ed = document.querySelector('[contenteditable="true"]');
+    if (!g || !ed) return null;
+    const gr = g.getBoundingClientRect();
+    const er = ed.getBoundingClientRect();
+    return { ghostLeft: gr.left, ghostRight: gr.right, ghostTop: gr.top, ghostBottom: gr.bottom, editorLeft: er.left, editorRight: er.right, editorTop: er.top, editorBottom: er.bottom };
+  })()`);
+  check('真实 DSH：开关右侧栏后 ghost 仍贴住编辑器',
+    afterToggle
+      && afterToggle.ghostLeft >= afterToggle.editorLeft - 4
+      && afterToggle.ghostRight <= afterToggle.editorRight + 4
+      && afterToggle.ghostTop >= afterToggle.editorTop - 4
+      && afterToggle.ghostTop <= afterToggle.editorBottom + 40,
+    JSON.stringify(afterToggle));
+}
+
 // 窄 composer：ghost 宽度必须跟随容器收缩，不能横向溢出（issue #5）
 await evalInPage(`(() => {
   const ed = document.querySelector('[contenteditable="true"]');

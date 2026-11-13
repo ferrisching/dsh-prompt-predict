@@ -362,7 +362,8 @@ await request('/dsh-prompt-predict/settings', 'POST', { switchEnabled: true, swi
 const suggestion = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
 const missing = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-does-not-exist' });
 check('未知会话返回 session_not_found 代码',
-  missing.status === 404 && missing.json.code === 'session_not_found', JSON.stringify(missing.json));
+  missing.status === 200 && missing.json.ok === false && missing.json.code === 'session_not_found',
+  JSON.stringify(missing.json));
 check('建议接口返回预测', suggestion.status === 200 && suggestion.json.suggestion === '继续，直接实现并安装插件', JSON.stringify(suggestion.json));
 check('建议响应带上会话标识', suggestion.json.sessionId === 'session-test', String(suggestion.json.sessionId));
 check('默认跟随当前会话模型', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);

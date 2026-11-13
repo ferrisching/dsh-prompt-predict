@@ -220,7 +220,9 @@
         for (var depth = 0; depth < 6 && node; depth += 1) {
           var cs = getComputedStyle(node);
           if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return false;
-          if (node.hidden || (node.getAttribute && node.getAttribute("aria-hidden") === "true")) return false;
+          if (node.hidden || node.inert
+            || (node.hasAttribute && node.hasAttribute("inert"))
+            || (node.getAttribute && node.getAttribute("aria-hidden") === "true")) return false;
           node = node.parentElement;
         }
         if (typeof document.elementFromPoint === "function") {
@@ -234,6 +236,22 @@
     }
 
     // 从某个 slot 节点往上找最近的 composer 编辑器，优先同会话、可见节点。
+    // 只检查祖先的 display/visibility/opacity/inert/aria-hidden，不做命中测试；
+    // 用于判断 ghost 自己所在的 slot 是否位于隐藏/后台 pane。
+    function isChainHidden(el) {
+      var node = el;
+      for (var depth = 0; depth < 10 && node; depth += 1) {
+        try {
+          var cs = getComputedStyle(node);
+          if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return true;
+          if (node.hidden || node.inert || (node.hasAttribute && node.hasAttribute("inert"))
+            || (node.getAttribute && node.getAttribute("aria-hidden") === "true")) return true;
+        } catch { return true; }
+        node = node.parentElement;
+      }
+      return false;
+    }
+
     function findEditorNear(node, sessionId) {
       var cur = node;
       for (var depth = 0; depth < 8 && cur; depth += 1) {
@@ -243,7 +261,9 @@
         } catch { list = []; }
         if (list.length) {
           var visible = list.filter(isActuallyVisible);
-          var pool = visible.length ? visible : list;
+          // 隐藏/后台 pane 的编辑器不能作为锚点，继续向上找可见 composer。
+          if (!visible.length) { cur = cur.parentElement; continue; }
+          var pool = visible;
           if (sessionId) {
             var scoped = pool.filter(function (el) {
               try {

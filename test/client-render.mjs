@@ -468,6 +468,24 @@ check('长建议不被省略号截断（宽度取自输入框、允许折行）'
   check('窄侧边栏中 ghost 宽度服从容器', Number(ghost?.props?.style?.width) <= 196, String(ghost?.props?.style?.width));
 }
 
+// 编辑器只移动、不改变尺寸时，body 变化应触发重新测量
+{
+  const inst = setup();
+  let left = 100;
+  inst.env.editor.getBoundingClientRect = () => ({ left, top: 200, width: 400, height: 40 });
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(3);
+  const ghost = () => find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true')[0];
+  const before = Number(ghost()?.props?.style?.left);
+  left = 140;
+  inst.env.mutationObservers.forEach((observer) => observer.trigger([]));
+  await view.settle(3);
+  check('布局只移动时 ghost 会重新对齐',
+    before === 100 && Number(ghost()?.props?.style?.left) === 140,
+    `before=${before} after=${ghost()?.props?.style?.left}`);
+  inst.env.editor.getBoundingClientRect = () => ({ left: 100, top: 200, width: 400, height: 40 });
+}
+
 // ③c 主题把输入框压成一行高（dsh-claude-style 的 min-height:24px + overflow:hidden）时，
 // ghost 是浮层、不参与排版，换行的建议会把 Tab / ↻ / Esc 提示条挤出输入框，正好盖住
 // 输入框下方「完全权限」那一排按钮。这里守住：两行 ghost 要把输入框临时撑到 ghost 高度，
@@ -1462,7 +1480,7 @@ check('设置页列出最近预测（含会话标题）',
   const ghostOn = () => find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true').length > 0;
   check('图片变化前 ghost 可见', ghostOn(), '');
   const imgNode = { nodeType: 1, matches: () => true, querySelector: () => null };
-  inst.env.mutationObservers.at(-1)?.trigger([{ addedNodes: [imgNode], removedNodes: [] }]);
+  inst.env.mutationObservers.forEach((observer) => observer.trigger([{ addedNodes: [imgNode], removedNodes: [] }]));
   await view.settle(2);
   check('页面新增图片时 ghost 收起', !ghostOn(), '');
 }
