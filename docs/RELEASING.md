@@ -46,8 +46,8 @@ DSH version in the release notes or the release commit body.
 ## 2. Verify
 
 ```bash
-npm test          # Host + client suites
-npm run test:smoke # real DSH smoke (optional; requires local installs)
+npm test           # Host + client suites
+npm run test:smoke # required real-DSH smoke (requires local installs)
 npm pack --dry-run --json --ignore-scripts
 ```
 
@@ -103,7 +103,23 @@ gh release create vX.Y.Z /tmp/dsh-prompt-predict-X.Y.Z.tgz \
 ```
 
 Release notes should mirror the CHANGELOG section and include the upgrade
-command. Verify the release asset sha256/sha1 and run a clean install in a
+command. **Every GitHub Release must also contain a `### Verification` section**
+with the exact tested host and smoke count:
+
+```markdown
+### Verification
+
+- Plugin: X.Y.Z
+- DSH: <exact dsh --version output> (<channel>)
+- `npm run test:smoke`: N/N pass
+- Date: YYYY-MM-DD
+```
+
+Append the same row to the **Verification history** table in
+`test/README.md`. A release is incomplete until both records exist; a smoke run
+that was not written down does not count as release evidence.
+
+Verify the release asset sha256/sha1 and run a clean install in a
 temporary directory:
 
 ```bash
