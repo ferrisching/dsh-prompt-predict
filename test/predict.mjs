@@ -226,28 +226,63 @@ check('中文对话的系统提示保持 Chinese',
 
 check('默认系统提示不含中文', !/[\u4e00-\u9fff]/.test(buildSystem('Russian')), buildSystem('Russian').slice(0, 60));
 check('系统提示明确点名语言', /in Russian/.test(buildSystem('Russian')) && /in Chinese/.test(buildSystem('Chinese')));
+const renderedSystem = buildSystem('Chinese', 120, true);
+check('系统模板完整渲染且只要求返回一条原始消息',
+  renderedSystem.startsWith('Write the single most useful next message the user would send to the AI assistant')
+  && renderedSystem.includes('Return only the raw message to send: no explanations, labels, quotes, or alternatives.')
+  && ['Output:', 'What to say:', 'Voice:'].every((section) => renderedSystem.includes(section))
+  && !/\{(?:target_language|format_rule|length_rule|budget)\}/.test(renderedSystem));
+check('目标语言不跟随界面，按明确字形/地区或用户原文写作',
+  renderedSystem.includes('Write in Chinese (ignore the UI language). Use its specified script/region if given; otherwise match the variant used in recent real [User] messages.'));
 function hasSuggestionEndingRule(system) {
-  return /^ +Do not end the suggested message with a full stop \(\. or 。\)\.$/m.test(system)
-    && /Keep question marks and other meaningful punctuation/.test(system)
-    && /does not apply to code or lists/.test(system);
+  return /Do not end with a trailing period \(\. or 。\) unless the message is code or a list/.test(system)
+    && /keep \? and other meaningful punctuation/.test(system);
 }
 check('中英文、单行和多行提示的句尾规则不限定长短',
   ['Chinese', 'English'].every((language) => [true, false].every((multiline) =>
     hasSuggestionEndingRule(buildSystem(language, 120, multiline)))));
+function hasSuggestionVoiceRule(system) {
+  return /in their own voice/.test(system)
+    && /Mirror only the user's own phrasing in recent real \[User\] messages/.test(system)
+    && /weight the latest one highest/.test(system)
+    && /ignore pasted quotes, logs, code, or metadata/.test(system)
+    && /Use \[Assistant\] messages solely for task state and options/.test(system)
+    && /never adopt the assistant's tone, wording, or stance/.test(system)
+    && /natural brevity, directness, particles, emoji, and punctuation/.test(system)
+    && /stay plain if style evidence is sparse/.test(system)
+    && /Prioritize concrete task value over surface mimicry/.test(system);
+}
+function hasSuggestionTaskValueRule(system) {
+  return /single most useful next message/.test(system)
+    && /user's stated goal, latest results, and the nearest unresolved step, blocker, or decision/.test(system)
+    && /highest-value concrete action/.test(system)
+    && /a specific instruction, a blocking question, or a correction\/verification check/.test(system)
+    && /Skip generic acknowledgments \("ok", "continue"\)/.test(system)
+    && /restating the assistant, completed work, or ungrounded new requests/.test(system);
+}
+check('灰字语气以真实用户的措辞为准，不套用助手和引文语气',
+  ['Chinese', 'English'].every((language) => hasSuggestionVoiceRule(buildSystem(language))));
+check('灰字优先给出能推进当前目标的具体下一步',
+  ['Chinese', 'English'].every((language) => hasSuggestionTaskValueRule(buildSystem(language))));
+check('提示词不强制使用书面语，也不照抄助手建议',
+  !/standard written form|no dialects|standard written Chinese rather than Cantonese|prefer the next step the assistant just finished or proposed|Do not repeat the assistant's last sentence/i.test(renderedSystem));
 check('关闭多行时强制压成单行',
   normalizeSuggestion('```js\nfunction a() {\n  return 1;\n}\n```', 400, false) === 'function a() { return 1; }',
   JSON.stringify(normalizeSuggestion('```js\nfunction a() {\n  return 1;\n}\n```', 400, false)));
+const singleLineSystem = buildSystem('Chinese', 120, false);
 check('关闭多行时提示词要求单行',
-  /single line/.test(buildSystem('Chinese', 120, false))
-  && !/line breaks and indentation/.test(buildSystem('Chinese', 120, false)),
-  buildSystem('Chinese', 120, false).slice(0, 60));
-check('开启多行时提示词允许代码',
-  /line breaks and indentation/.test(buildSystem('Chinese', 120, true)), '');
+  /one plain-text line with no Markdown code fence/.test(singleLineSystem)
+  && /within about 120 characters on one line/.test(singleLineSystem)
+  && !/line breaks and indentation/.test(singleLineSystem));
+check('开启多行时提示词允许代码/列表并保留换行缩进',
+  /Use no Markdown unless the message naturally needs to be code or a list; preserve required line breaks and indentation/.test(renderedSystem)
+  && /within about 120 characters\./.test(renderedSystem));
+check('缩短时保留完整的具体行动或问题（单行和多行）',
+  [singleLineSystem, renderedSystem].every((system) => /keep the message complete and preserve its concrete action or question/.test(system)));
 
-check('系统提示允许代码/列表的多行建议',
+check('系统提示默认允许代码/列表的多行建议',
   /line breaks and indentation/.test(buildSystem('Chinese'))
-  && !/no Markdown code blocks/.test(buildSystem('Chinese')),
-  buildSystem('Chinese').slice(0, 80));
+  && !/one plain-text line/.test(buildSystem('Chinese')));
 
 const predicted = await predictNextPrompt(fakeCtx, fakeSession, { maxTokens: 48 });
 check('生成并归一化建议', predicted.suggestion === '继续，直接实现并安装插件', predicted.suggestion);
@@ -260,7 +295,8 @@ check('继承当前会话模型路由', captured.provider === 'provider-current'
 check('限制输出 token', captured.maxTokens === 48, String(captured.maxTokens));
 // 中文会话：识别为 Chinese，system 与 framing 都不该是「因为提示词是中文」而让模型写中文
 check('中文会话识别为 Chinese', predicted.language === 'Chinese', String(predicted.language));
-check('请求里的 system 点名 Chinese', /in Chinese/.test(captured.system ?? ''), (captured.system ?? '').slice(0, 60));
+check('辅助请求使用实际语言和字数预算渲染用户语气提示词',
+  captured.system === buildSystem('Chinese', predicted.budgetChars), (captured.system ?? '').slice(0, 60));
 check('系统提示带字数预算（120 字 → 约 72 字）', /within about \d+ characters/.test(captured.system ?? ''), (captured.system.match(/within about \d+ characters/) || [''])[0]);
 check('framing 用英文并点名语言', /Predict the user's next message in Chinese/.test(captured.messages?.[0]?.content?.[0]?.text ?? ''), '');
 // 对话内容被 <conversation> 界定并声明为引用数据（防提示词注入）
@@ -521,8 +557,8 @@ multilineNext = true;
 const flatSuggestion = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-multiline' });
 check('关闭多行时实际建议被压成单行',
   flatSuggestion.json.ok === true && !/\n/.test(flatSuggestion.json.suggestion)
-  && /single line/.test(captured.system ?? ''),
-  JSON.stringify({ suggestion: flatSuggestion.json.suggestion, single: /single line/.test(captured.system ?? '') }));
+  && /one plain-text line/.test(captured.system ?? ''),
+  JSON.stringify({ suggestion: flatSuggestion.json.suggestion, single: /one plain-text line/.test(captured.system ?? '') }));
 await request('/dsh-prompt-predict/settings', 'POST', { multilineSuggestions: true, outputChars: 120, timeoutMs: 12000, maxMessages: 8, maxChars: 6000, historySize: 10, reasoningEffort: 'off' });
 await request('/dsh-prompt-predict/settings', 'POST', { reasoningEffort: 'auto' });
 
@@ -586,9 +622,9 @@ for (const [code, needle] of [
   ['zh-CN', 'Simplified Chinese (Mainland China)'],
   ['zh-SG', 'Simplified Chinese (Singapore)'],
   ['zh-MY', 'Simplified Chinese (Malaysia)'],
-  ['zh-Hant', 'Traditional Chinese'],
-  ['zh-TW', 'Traditional Chinese (Taiwan; 繁體中文'],
-  ['zh-HK', 'Traditional Chinese (Hong Kong; 繁體中文'],
+  ['zh-Hant', 'Traditional Chinese (繁體中文; use Traditional characters)'],
+  ['zh-TW', 'Traditional Chinese (Taiwan; 繁體中文; use Traditional characters)'],
+  ['zh-HK', 'Traditional Chinese (Hong Kong; 繁體中文; use Traditional characters)'],
   ['en-US', 'American English'],
   ['en-GB', 'British English'],
   ['pt-BR', 'Brazilian Portuguese'],
