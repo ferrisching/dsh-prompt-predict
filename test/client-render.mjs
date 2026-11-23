@@ -16,6 +16,14 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const clientDir = join(here, '..', 'client');
+// 跑本文件时可直接验证源码片段，不写构建产物；CI 仍默认测试实际发布的文件。
+const clientCode = process.argv.includes('--source')
+  ? [
+      '00-prelude.js', '01-dictionary.js', '02-theme.js', '03-core.js',
+      '04-composer.js', '05-settings.js', '06-apply.js',
+    ].map((name) => readFileSync(join(clientDir, 'src', name), 'utf8')).join('')
+  : readFileSync(join(clientDir, 'client.js'), 'utf8');
 const results = [];
 const check = (name, ok, evidence = '') => {
   results.push(Boolean(ok));
@@ -80,6 +88,13 @@ function createReact() {
   return {
     React: api,
     reset() { stores.clear(); },
+    unmount() {
+      onChange = () => {};
+      for (const { hooks } of stores.values()) {
+        for (const hook of hooks) if (typeof hook?.cleanup === 'function') hook.cleanup();
+      }
+      stores.clear();
+    },
     setOnChange(fn) { onChange = fn; },
     setRefFactory(fn) { refFactory = fn; },
     get refFactory() { return refFactory; },
@@ -148,6 +163,8 @@ function find(node, predicate, acc = []) {
   return acc;
 }
 const hasGhost = (tree) => find(tree, (n) => n.props && (n.props['data-prompt-predict-ghost'] === 'true' || n.props['data-prompt-predict-row'] === 'true')).length > 0;
+const ghostText = (tree) => find(tree, (n) => n.props?.['data-prompt-predict-text'] === 'true')[0]?.props.children;
+const suggestCallsOf = (env) => env.fetchCalls.filter((c) => c.url.endsWith('/suggest'));
 const textOf = (tree) => find(tree, () => true)
   .flatMap((n) => (typeof n.props?.children === 'string' ? [n.props.children] : []))
   .join(' ');
@@ -252,8 +269,8 @@ function loadClient(localeService, sharedEnv) {
     document: env.document,
     navigator: { get userAgent() { return testUserAgent; }, clipboard: env.clipboard },
     console,
-    // 忽略延时（插件里有个 350ms 的「等回复停稳再预测」），让测试不必真等
-    setTimeout: (fn) => setTimeout(fn, 0),
+    // 缩短 UI 等待，但不让超时自动把 mock fetch 的 signal 变成已取消。
+    setTimeout: (fn, ms) => setTimeout(fn, ms >= 15000 ? ms : ms === 1500 ? 80 : 0).unref(),
     clearTimeout,
     // 沙箱里 interval 只跑一次，够用来验证「刷新一次剩余时间」
     setInterval: (fn) => setTimeout(fn, 0),
@@ -276,6 +293,8 @@ function loadClient(localeService, sharedEnv) {
     },
     fetch: async (url, options) => {
       env.fetchCalls.push({ url: String(url), options });
+      const response = env.route?.(String(url), options);
+      if (response) return response;
       if (String(url).startsWith('https://registry.npmjs.org/')) {
         if (registryFails) return { ok: false, status: 500, json: async () => ({}) };
         return { ok: true, json: async () => ({ version: registryVersion }) };
@@ -305,7 +324,7 @@ function loadClient(localeService, sharedEnv) {
   sandbox.globalThis = sandbox;
   sandbox.window.__ModuleLoader__ = { load: (mod) => { registration = mod; } };
 
-  const code = readFileSync(join(here, '..', 'client', 'client.js'), 'utf8');
+  const code = clientCode;
   vm.createContext(sandbox);
   vm.runInContext(code, sandbox, { filename: 'client.js' });
   if (!registration) throw new Error('client.js 没有调用 window.__ModuleLoader__.load');
@@ -353,7 +372,7 @@ check('注入了两个 slot', Boolean(registered['conversation.composer.dock'] &
 
 {
   // 词典静态自检：key 中英对称、代码用到的都在词典里 —— 漏 one 就会把 key 直接显示给用户
-  const src = readFileSync(join(here, '..', 'client', 'client.js'), 'utf8');
+  const src = clientCode;
   const marker = '    // ---------- 设置页样式 ----------';
   const [head, body] = src.split(marker);
   const keysIn = (block) => new Set([...block.matchAll(/"([\w.]+)":\s*"/g)].map((m) => m[1]));
@@ -386,6 +405,281 @@ const makeProps = (draft) => ({
   useInput: (selector) => selector({ draft }),
   inputActions: { captureInsertion: () => ({}), insertText: () => true },
 });
+const keydown = (env, key, extra) => {
+  let prevented = false;
+  env.window.dispatchEvent({ type: 'keydown', key, preventDefault() { prevented = true; }, stopPropagation() {}, ...extra });
+  return prevented;
+};
+const jsonResponse = (data) => ({ ok: true, json: async () => data });
+const requestBody = (call) => JSON.parse(call?.options?.body || '{}');
+const storedRuns = (env) => JSON.parse(env.localStorage.getItem('dsh-prompt-predict.history') || '[]');
+
+// Host 保存唯一待用候选。切回/重挂时走自动查询，但不增加诊断历史或重新生成。
+{
+  const env = makeEnv();
+  const pending = new Map();
+  let generated = 0;
+  env.route = (url, options) => {
+    if (!url.endsWith('/suggest')) return;
+    const { sessionId } = JSON.parse(options.body);
+    if (pending.has(sessionId)) return jsonResponse({ ...pending.get(sessionId), restored: true });
+    generated += 1;
+    const entry = { ok: true, suggestion: `建议-${sessionId}`, round: `round-${sessionId}`, candidate: `signed-${sessionId}`, truncated: sessionId === 'A' };
+    pending.set(sessionId, entry);
+    return jsonResponse(entry);
+  };
+  let sessionId = 'A';
+  const render = () => {
+    const inst = setup(null, env);
+    const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => ({ ...makeProps(''), sessionId }));
+    return { view, unmount: () => inst.react.unmount() };
+  };
+  const first = render();
+  await first.view.settle(4);
+  const oldTab = env.window.__dshPromptPredictTabAccept;
+  sessionId = 'B';
+  first.view.render();
+  const noOldGhost = !hasGhost(first.view.tree) && oldTab?.accept() === false;
+  await first.view.settle(4);
+  const inB = ghostText(first.view.tree) === '建议-B';
+  sessionId = 'A';
+  await first.view.settle(4);
+  const restored = ghostText(first.view.tree) === '建议-A';
+  first.unmount();
+  const reloaded = render();
+  await reloaded.view.settle(4);
+  check('A→B→A 与重挂复用同一句及截断，不再生成、不增加历史',
+    noOldGhost && inB && restored && ghostText(reloaded.view.tree) === '建议-A'
+    && !!find(reloaded.view.tree, (n) => n.props?.['data-prompt-predict-truncated'])[0]
+    && generated === 2 && storedRuns(env).length === 2
+    && suggestCallsOf(env).map((call) => requestBody(call).composer).join(',') === 'auto,auto,auto,auto');
+  reloaded.unmount();
+}
+
+// 冷恢复可以采纳；显式重抽返回原候选和实际状态，不计为新推理或错误。
+{
+  const env = makeEnv();
+  const entry = { ok: true, suggestion: '重开后仍是这条', round: 'round-cold', candidate: 'signed-cold', restored: true, rerollCount: 1 };
+  env.route = (url, opts) => {
+    if (!url.endsWith('/suggest')) return;
+    const detached = JSON.parse(opts.body).composer === 'manual';
+    return jsonResponse({ ...entry, detached });
+  };
+  const inst = setup(null, env);
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(4);
+  const quiet = ghostText(view.tree) === entry.suggestion && !/继续对话/.test(textOf(view.tree));
+  keydown(env, ' ', { code: 'Space', ctrlKey: true, shiftKey: true });
+  await view.settle(4);
+  check('冷会话重抽说明状态且保持原句，不计入最近预测',
+    quiet && ghostText(view.tree) === entry.suggestion && /继续对话后可生成新建议/.test(textOf(view.tree))
+    && storedRuns(env).length === 0 && suggestCallsOf(env).map((call) => requestBody(call).composer).join(',') === 'auto,manual');
+  inst.react.unmount();
+}
+
+// 已消费轮次自动查询静默，显式请求仍可生成；全局 Tab 和鼠标同样消费各自展示的 round。
+{
+  const env = makeEnv();
+  let pending = { ok: true, suggestion: '缓存待用', round: 'round-visible', candidate: 'signed-visible', rerollCount: 3 };
+  let dismissed = false;
+  let next = 0;
+  env.route = (url, opts) => {
+    if (url.endsWith('/dismiss')) {
+      dismissed = JSON.parse(opts.body).round === pending.round;
+      return jsonResponse({ ok: dismissed });
+    }
+    if (!url.endsWith('/suggest')) return;
+    if (JSON.parse(opts.body).composer === 'manual') {
+      next += 1;
+      dismissed = false;
+      pending = { ok: true, suggestion: `手动新句 ${next}`, round: `round-manual-${next}`, candidate: `signed-manual-${next}` };
+      return jsonResponse(pending);
+    }
+    return jsonResponse(dismissed ? { ok: false, code: 'suggestion_suppressed' } : { ...pending, restored: true });
+  };
+  let draft = '';
+  const inserted = [];
+  const props = () => ({
+    ...makeProps(draft),
+    inputActions: { captureInsertion: () => ({}), insertText: (text) => { inserted.push(text); return true; } },
+  });
+  const begin = () => {
+    const inst = setup(null, env);
+    return { react: inst.react, view: mount(inst.react, inst.registered['conversation.composer.dock'].Component, props) };
+  };
+  const first = begin();
+  await first.view.settle(4);
+  const callsBefore = suggestCallsOf(env).length;
+  const arrowHandled = keydown(env, 'ArrowDown', { code: 'ArrowDown' });
+  const manualHandled = keydown(env, ' ', { code: 'Space', ctrlKey: true, shiftKey: true });
+  const limitText = textOf(first.view.tree);
+  const limitKept = arrowHandled && manualHandled && /最大切换次数/.test(limitText) && !/按 ↑/.test(limitText)
+    && suggestCallsOf(env).length === callsBefore;
+  draft = '纯草稿';
+  first.view.render();
+  const hidden = !hasGhost(first.view.tree);
+  draft = '';
+  first.view.render();
+  check('纯草稿清空不重发，恢复句也保留本轮切换次数',
+    limitKept && hidden && ghostText(first.view.tree) === pending.suggestion && suggestCallsOf(env).length === callsBefore);
+  const consumed = keydown(env, 'Escape') && !hasGhost(first.view.tree);
+  await first.view.settle(2);
+  first.react.unmount();
+  const resumed = begin();
+  await resumed.view.settle(4);
+  check('Esc 立即消费所见轮次，重挂 suppressed 不显示、不写失败',
+    consumed && dismissed && !hasGhost(resumed.view.tree) && !textOf(resumed.view.tree) && storedRuns(env).length === 0);
+  keydown(env, ' ', { code: 'Space', ctrlKey: true, shiftKey: true });
+  await resumed.view.settle(4);
+  const wasManual = requestBody(suggestCallsOf(env).at(-1)).composer === 'manual';
+  const tabConsumed = keydown(env, 'Tab') && !hasGhost(resumed.view.tree);
+  await resumed.view.settle(2);
+  keydown(env, 'ArrowDown', { code: 'ArrowDown' });
+  await resumed.view.settle(4);
+  find(resumed.view.tree, (n) => n.type === 'button' && n.props?.children === 'Tab')[0]?.props?.onClick();
+  await resumed.view.settle(2);
+  const dismiss = env.fetchCalls.filter((call) => call.url.endsWith('/dismiss'));
+  check('键盘与鼠标采纳都消费同一所见 round，显式请求可再生成',
+    wasManual && tabConsumed && dismissed && !hasGhost(resumed.view.tree) && inserted.join(',') === '手动新句 1,手动新句 2'
+    && dismiss.every((call) => call.options.keepalive && requestBody(call).sessionId === 'session-smoke')
+    && dismiss.map((call) => requestBody(call).round).join(',') === 'round-visible,round-manual-1,round-manual-2');
+  resumed.react.unmount();
+}
+
+// 在飞 A 切到 B，要取消 A 且不能让 A 的迟到结果改写 B；running 同样撤回旧按键回调。
+{
+  const env = makeEnv();
+  let releaseA;
+  let releaseB;
+  const lateA = new Promise((r) => { releaseA = r; });
+  const lateB = new Promise((r) => { releaseB = r; });
+  let openedB = false;
+  env.route = (url, { body }) => {
+    if (!url.endsWith('/suggest')) return;
+    if (JSON.parse(body).sessionId === 'session-A') return lateA;
+    if (openedB) return lateB;
+    openedB = true;
+    return jsonResponse({ ok: true, suggestion: '当前 B', round: 'round-B' });
+  };
+  let sessionId = 'session-A';
+  let running = false;
+  const inst = setup(null, env);
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => ({
+    ...makeProps(''), sessionId, useSession: (s) => s({ running }),
+  }));
+  await view.settle(3);
+  const signalA = suggestCallsOf(env).at(-1)?.options.signal;
+  const aWasInFlight = signalA && !signalA.aborted;
+  sessionId = 'session-B';
+  await view.settle(4);
+  releaseA(jsonResponse({ ok: true, suggestion: '已过时的 A', round: 'round-A' }));
+  await view.settle(3);
+  const oldTab = env.window.__dshPromptPredictTabAccept;
+  check('视图切换真正 abort A，并忽略迟到的 A 成功帧', aWasInFlight && signalA.aborted
+    && ghostText(view.tree) === '当前 B' && storedRuns(env).map((run) => run.suggestion).join(',') === '当前 B');
+  running = true;
+  view.render();
+  const runningHides = !hasGhost(view.tree) && oldTab?.accept() === false && !keydown(env, 'Tab');
+  running = false;
+  await view.settle(3);
+  const signalB = suggestCallsOf(env).at(-1)?.options.signal;
+  const bWasInFlight = signalB && !signalB.aborted;
+  running = true;
+  view.render();
+  releaseB(jsonResponse({ ok: false, reason: '过时的失败不能显示或记历史' }));
+  await view.settle(3);
+  check('running 不显示、不消费旧灰字；迟到的失败也不增加历史',
+    runningHides && bWasInFlight && signalB.aborted && !textOf(view.tree) && storedRuns(env).length === 1
+    && !env.fetchCalls.some((call) => call.url.endsWith('/dismiss')));
+  inst.react.unmount();
+}
+
+// 同轮 ↑/↓ 只签回所选候选；在流式半句中 ↑ 能取消请求并恢复上一条完整内容。
+{
+  const env = makeEnv();
+  const round = 'same-round';
+  const entry = (suggestion, candidate, truncated) => ({ ok: true, round, suggestion, candidate, truncated });
+  const one = entry('第一条完整候选', 'signed-1', true);
+  const two = entry('第二条完整候选', 'signed-2', false);
+  let pending = null;
+  let requests = 0;
+  let release;
+  const late = new Promise((r) => { release = r; });
+  env.route = (url, opts) => {
+    if (url.endsWith('/select')) {
+      pending = { ok: true, ...JSON.parse(opts.body) };
+      return jsonResponse({ ok: true });
+    }
+    if (!url.endsWith('/suggest')) return;
+    requests += 1;
+    if (requests === 1) return jsonResponse(pending = one);
+    if (requests === 2) return jsonResponse(pending = two);
+    if (requests !== 3) return jsonResponse({ ...pending, restored: true });
+    const frames = [{ type: 'start', round }, { type: 'delta', text: '第三条流式半句' }, late, { type: 'error', code: 'suggestion_stale' }];
+    return {
+      headers: { get: () => 'application/x-ndjson' },
+      body: { getReader: () => ({ read: async () => frames.length
+        ? { done: false, value: Buffer.from(`${JSON.stringify(await frames.shift())}\n`) }
+        : { done: true } }) },
+    };
+  };
+  const attach = () => {
+    const inst = setup(null, env);
+    return { react: inst.react, view: mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps('')) };
+  };
+  const { react, view } = attach();
+  await view.settle(4);
+  keydown(env, 'ArrowDown', { code: 'ArrowDown' });
+  await view.settle(4);
+  keydown(env, 'ArrowUp');
+  const displaysFirst = ghostText(view.tree) === one.suggestion && !!find(view.tree, (n) => n.props?.['data-prompt-predict-truncated'])[0];
+  keydown(env, 'ArrowDown', { code: 'ArrowDown' });
+  keydown(env, 'ArrowDown', { code: 'ArrowDown' });
+  await view.settle(4);
+  const playing = ghostText(view.tree) === '第三条流式半句';
+  const inflight = suggestCallsOf(env).at(-1);
+  keydown(env, 'ArrowUp');
+  release({ type: 'delta', text: '旧请求迟到的正文' });
+  await view.settle(4);
+  const restoredBeforeUnmount = ghostText(view.tree) === two.suggestion;
+  keydown(env, 'ArrowUp');
+  react.unmount();
+  const reloaded = attach();
+  await reloaded.view.settle(4);
+  const select = env.fetchCalls.filter((call) => call.url.endsWith('/select'));
+  const selected = select.map((call) => requestBody(call));
+  check('同轮 ↑/↓ 保存签过名的真实候选；流式请求迟到不覆盖，重挂恢复所选',
+    displaysFirst && playing && inflight.options.signal.aborted && restoredBeforeUnmount && ghostText(reloaded.view.tree) === one.suggestion
+    && selected.map((s) => s.candidate).join(',') === 'signed-1,signed-2,signed-2,signed-1'
+    && selected.every((s) => s.sessionId === 'session-smoke' && s.round === round)
+    && selected.filter((s) => s.candidate === 'signed-1').every((s) => s.truncated && s.suggestion === one.suggestion)
+    && storedRuns(env).length === 2);
+  reloaded.react.unmount();
+}
+
+// 另一分栏的明确会话归属，不被本栏的全局 Tab / 方向键 / 鼠标采纳错投。
+{
+  const env = makeEnv();
+  env.route = (url) => url.endsWith('/suggest') ? jsonResponse({ ok: true, suggestion: '本栏候选', round: 'this-round' }) : undefined;
+  const sessionNode = (id) => ({
+    closest: (selector) => selector === '[data-conversation-session]' ? { getAttribute: () => id } : null,
+  });
+  Object.assign(env.editor, sessionNode('session-smoke'));
+  const inst = setup(null, env);
+  let inserts = 0;
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => ({
+    ...makeProps(''), inputActions: { captureInsertion: () => ({}), insertText: () => { inserts += 1; return true; } },
+  }));
+  await view.settle(4);
+  const other = { ...sessionNode('session-other'), tagName: 'DIV', isContentEditable: true };
+  env.document.activeElement = other;
+  const ignored = !keydown(env, 'Tab', { target: other }) && !keydown(env, 'ArrowDown', { code: 'ArrowDown', target: other });
+  find(view.tree, (n) => n.type === 'button' && n.props?.children === 'Tab')[0]?.props?.onClick();
+  const noWrongPane = ignored && ghostText(view.tree) === '本栏候选' && inserts === 0 && suggestCallsOf(env).length === 1;
+  env.document.activeElement = env.editor;
+  check('跨分栏不会错投或错消费；本栏 Tab 保持可用', noWrongPane && keydown(env, 'Tab') && inserts === 1 && !hasGhost(view.tree));
+  inst.react.unmount();
+}
 
 // ① 空草稿 + 有建议 → 必须渲染出 ghost
 const dock = mount(react, dockComponent, () => makeProps(''));
@@ -1411,7 +1705,7 @@ check('设置页列出最近预测（含会话标题）',
     /先补测试再实现/.test(textOf(view.tree)) && !/结果被丢弃/.test(textOf(view.tree)), textOf(view.tree).slice(0, 50));
 }
 
-// 手动请求期间有输入：结果被丢弃时明确说明原因
+// 手动请求期间有输入：来得晚的结果也保留，但不能覆盖正在编辑的草稿
 {
   const inst = setup();
   const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
@@ -1422,11 +1716,18 @@ check('设置页列出最近预测（含会话标题）',
   await view.settle(1);
   inst.env.editor.textContent = 'x';
   inst.env.editor.emit('input');
+  fetchResult = { suggestion: '稍后使用的新建议' };
   release();
   holdSuggest = null;
   await view.settle(4);
-  check('结果因输入被丢弃时显示原因',
-    /结果被丢弃/.test(textOf(view.tree)) && /请求期间检测到输入/.test(textOf(view.tree)), textOf(view.tree).slice(0, 80));
+  const canClear = !hasGhost(view.tree) && !/结果被丢弃/.test(textOf(view.tree));
+  const before = suggestCallsOf(inst.env).length;
+  inst.env.editor.textContent = '';
+  inst.env.editor.emit('input', { inputType: 'deleteContentBackward' });
+  await view.settle(3);
+  check('手动请求期间输入只隐藏；删空恢复新建议、不重发',
+    canClear && ghostText(view.tree) === '稍后使用的新建议' && suggestCallsOf(inst.env).length === before);
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 }
 
 // 手动换一条失败：立刻显示原因
@@ -1579,27 +1880,37 @@ check('设置页列出最近预测（含会话标题）',
   await view.settle(3);
   const suggestCalls = () => inst.env.fetchCalls.filter((c) => c.url.includes('/suggest'));
   const before = suggestCalls().length;
+  const original = ghostText(view.tree);
   inst.env.window.dispatchEvent({ type: 'paste', clipboardData: { files: [{}], items: [], getData: () => '' } });
-  await view.settle(2);
-  check('粘贴图片/文件后 ghost 收起',
-    find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true').length === 0, '');
+  check('粘贴图片/文件后 ghost 收起', !hasGhost(view.tree));
   inst.env.window.dispatchEvent({ type: 'keydown', key: 'ArrowDown', code: 'ArrowDown', preventDefault() {}, stopPropagation() {} });
   await view.settle(3);
   check('粘贴附件后按 ↓ 不请求', suggestCalls().length === before, String(suggestCalls().length - before));
+  await new Promise((r) => setTimeout(r, 100));
+  check('粘贴未留下附件时恢复原句、不重发', Boolean(original) && ghostText(view.tree) === original && suggestCalls().length === before);
 }
 
-// 输入状态里带附件字段也应视为已有内容
+// DSH 的真实 draft store 字段 attachmentIds：已有附件不预测，添加/移除只切显示。
 {
   const inst = setup();
+  let attachmentIds = ['test-file'];
   const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => ({
     ...makeProps(''),
-    useInput: (s) => s({ draft: '', attachments: [{ name: 'a.png' }] }),
+    useInput: (s) => s({ draft: '', attachmentIds }),
   }));
   await view.settle(3);
-  check('输入状态含附件时不显示 ghost',
-    find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true').length === 0, '');
-  check('输入状态含附件时不发起预测',
-    inst.env.fetchCalls.filter((c) => c.url.includes('/suggest')).length === 0, '');
+  check('输入状态含附件时不显示、不发起预测', !hasGhost(view.tree) && suggestCallsOf(inst.env).length === 0);
+  attachmentIds = [];
+  await view.settle(3);
+  const original = ghostText(view.tree);
+  const before = suggestCallsOf(inst.env).length;
+  attachmentIds = ['test-file'];
+  view.render();
+  const hidden = !hasGhost(view.tree);
+  attachmentIds = [];
+  await view.settle(3);
+  check('草稿附件移除后恢复原句、不重发', hidden && Boolean(original) && ghostText(view.tree) === original
+    && suggestCallsOf(inst.env).length === before);
 }
 
 // 页面存在多个 composer 时，ghost 必须跟随当前焦点/可见的那个
@@ -1665,11 +1976,12 @@ check('设置页列出最近预测（含会话标题）',
     ghost.length === 0 && stored.length === 0, `ghost=${ghost.length} history=${stored.length}`);
 }
 
-// 附件在编辑器外部（上方/旁边卡片）时也要识别；删图后清掉建议
+// 附件在编辑器外部（上方/旁边卡片）时也要识别；删图后恢复原句。
 {
   const inst = setup();
   const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
   await view.settle(4);
+  const original = ghostText(view.tree);
   const parent = { querySelector: (sel) => (String(sel).includes('data-attachment') ? {} : null) };
   inst.env.editor.parentElement = parent;
   inst.env.editor.emit('input');
@@ -1685,8 +1997,7 @@ check('设置页列出最近预测（含会话标题）',
   parent.querySelector = () => null;   // 删除附件
   inst.env.editor.emit('input');
   await view.settle(3);
-  check('删除附件后 ghost 不残留',
-    find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true').length === 0, '');
+  check('删除 DOM 附件后恢复原句、不重发', Boolean(original) && ghostText(view.tree) === original && suggestCalls().length === before);
   inst.env.editor.parentElement = { querySelector: () => null };
 }
 
@@ -1695,6 +2006,7 @@ check('设置页列出最近预测（含会话标题）',
   const inst = setup();
   const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
   await view.settle(4);
+  const original = ghostText(view.tree);
   inst.env.editor.innerHTML = '<div contenteditable="false" data-lexical-decorator="true"></div>';
   inst.env.editor.emit('input');   // 真实环境里插入附件会触发 input
   await view.settle(2);
@@ -1708,7 +2020,7 @@ check('设置页列出最近预测（含会话标题）',
   inst.env.editor.innerHTML = '';
   inst.env.editor.emit('input');
   await view.settle(2);
-  check('删除附件后不会残留 ghost', find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true').length === 0, '');
+  check('删除装饰节点后恢复原句、不重发', Boolean(original) && ghostText(view.tree) === original && suggestCalls().length === before);
 }
 
 // 图片/附件也算草稿：ghost 不应画在附件上
@@ -1758,13 +2070,14 @@ check('设置页列出最近预测（含会话标题）',
     ghost === 0 && stored.length === 0, `ghost=${ghost} history=${stored.length}`);
 }
 
-// 输入法合成：合成中不显示建议；合成取消（没留下文字）后重新预测
+// 输入法合成：合成期间隐藏，取消后显示同一句。
 {
   const inst = setup();
   const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
   await view.settle(4);
   const ghostOn = () => find(view.tree, (n) => n.props && n.props['data-prompt-predict-ghost'] === 'true').length > 0;
   check('合成前 ghost 可见', ghostOn(), '');
+  const original = ghostText(view.tree);
   inst.env.editor.textContent = 'zhongwen';   // 拼音串未必进 textContent，这里两种都模拟
   inst.env.window.dispatchEvent({ type: 'compositionstart' });
   await view.settle(2);
@@ -1774,8 +2087,8 @@ check('设置页列出最近预测（含会话标题）',
   inst.env.editor.textContent = '';
   inst.env.window.dispatchEvent({ type: 'compositionend' });
   await view.settle(5);
-  check('取消合成后重新发起预测并恢复 ghost',
-    inst.env.fetchCalls.filter((c) => c.url.includes('/suggest')).length > before && ghostOn(), '');
+  check('取消合成后恢复同一句、不重发',
+    Boolean(original) && ghostText(view.tree) === original && suggestCallsOf(inst.env).length === before);
 }
 
 // 合成期间到达的结果不得显示，也不写历史
@@ -1800,6 +2113,7 @@ check('设置页列出最近预测（含会话标题）',
   const inst = setup();
   const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
   await view.settle(4);
+  const original = ghostText(view.tree);
   inst.env.window.dispatchEvent({ type: 'compositionstart' });
   inst.env.editor.textContent = '中文';
   inst.env.window.dispatchEvent({ type: 'compositionend' });
@@ -1810,9 +2124,8 @@ check('设置页列出最近预测（含会话标题）',
   inst.env.editor.textContent = '';
   inst.env.editor.emit('input');
   await view.settle(5);
-  check('合成提交后删空文字仍能重新预测',
-    inst.env.fetchCalls.filter((c) => c.url.includes('/suggest')).length > beforeClear,
-    '');
+  check('合成提交后删空恢复原句、不重发',
+    Boolean(original) && ghostText(view.tree) === original && suggestCallsOf(inst.env).length === beforeClear);
 }
 
 // P0：快捷键不能抢其它输入框的焦点行为

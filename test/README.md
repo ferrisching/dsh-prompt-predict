@@ -6,7 +6,7 @@ profile and a browser.
 
 | Command | Scope | Current count |
 |---|---|---|
-| `npm test` | Host logic + client rendering | 151 host + 247 client |
+| `npm test` | Host logic + client rendering | 178 host + 257 client |
 | `npm run test:smoke` | Real DSH via disposable profile, mock LLM and headless Edge/CDP | 18 checks |
 | `npm run test:sidebar` | Opt-in probe: real DSH + `dsh-better-sidebar`, prints sidebar DOM | diagnostic, no ghost assertion |
 
@@ -22,13 +22,18 @@ profile and a browser.
 `test/predict.mjs` covers message trimming, suggestion normalization,
 language detection (including DSH-injected user-role messages), route
 registration, settings validation, streaming/JSON fallback, failure
-diagnostics, empty-result retry, dedup and bilingual errors.
+diagnostics, empty-result retry, dedup and bilingual errors. Pending suggestion
+cases recreate the Host with a temporary profile and a mocked read-only session
+service. They check zero model calls on cache hits, round invalidation,
+consumption, late replies, and memory-only behavior with history off.
 
 `test/client-render.mjs` renders the plugin with a small React stand-in. It
 covers ghost rendering, Tab focus contexts, session switching, width/geometry
 clamping, insertion fallbacks, paste/attachments, IME composition, history,
-settings and both locales. Minimal display cases cover the default and save flow,
-desktop and touch controls, and preserved shortcuts and status notices.
+settings and both locales. Restoration cases cover switching back and remounting,
+read-only rerolls, draft visibility, consuming the shown round, and late results
+across sessions. Minimal display cases cover the default and save flow, desktop
+and touch controls, and preserved shortcuts and status notices.
 
 ## Real DSH smoke
 

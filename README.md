@@ -147,9 +147,11 @@ Then open that profile's `package.json` and add `"dsh-prompt-predict"` to the `d
 | `↑` | Return to the previous suggestion in this round (free) |
 | `Ctrl/⌘+Shift+Space` | Trigger a prediction by hand; rerolls when one is already showing |
 | `Esc` | Dismiss this one |
-| Just start typing | It disappears; **clearing the draft brings it back** (only `Esc` is a permanent dismissal) |
+| Just start typing | Temporarily hide the suggestion; **clearing the draft brings it back** |
 
-Suggestions only appear when the composer is empty and the session isn't running. Switching sessions or interrupting a reply clears any pending suggestion.
+Suggestions only appear when the composer is empty and the session isn't running. If you return to a session or reopen DSH, the same round's selected suggestion can be restored from the local cache without another model call. `Tab` or `Esc` prevents automatic restoration for that round; you can still ask for a new suggestion by hand. A reply, edit or retry that changes the conversation context invalidates the old suggestion.
+
+Restoration keeps the selected suggestion and the number of switches used, not the `↑` / `↓` history. If the reopened session is read-only, you can accept its restored suggestion, but need to continue the conversation before generating a new one.
 
 ## ⚙️ Settings
 
@@ -177,6 +179,7 @@ The bottom of the settings page shows a **recent predictions** list (default 10,
 - Click **Save** to apply changes immediately — no DSH restart
 - Settings are stored at `~/.dsh/dsh-prompt-predict/config.json` (mode 600)
 - Precedence: **user-saved settings > cordis patch deploy defaults > built-in defaults**
+- Pending suggestions are separate from Recent predictions. The Host keeps one selected suggestion (or an accepted/dismissed marker) and its round and switch count per session, up to 256 sessions, in `dsh-prompt-predict/pending.json` under the active DSH profile. The cache stores no transcripts, drafts, or alternate suggestions and is not uploaded. Setting **History size** to `0` clears the profile's disk cache and limits restoration to the current Host process; turning history back on does not save suggestions generated while it was off.
 
 ## 🔌 HTTP API
 
@@ -188,7 +191,9 @@ The plugin registers a same-origin prefix route `/dsh-prompt-predict` on DSH's w
 | GET | `/dsh-prompt-predict/catalog` | All providers and models (for the dropdowns) |
 | GET | `/dsh-prompt-predict/efforts?provider=&model=` | The reasoning levels that model actually supports |
 | POST | `/dsh-prompt-predict/settings` | Save settings; `{ "reset": true }` restores defaults |
-| POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → one suggestion |
+| POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → one suggestion; the composer adds `composer: 'auto'` to restore first or `'manual'` to request a new one |
+| POST | `/dsh-prompt-predict/dismiss` | `{ sessionId, round }` → mark this round's suggestion handled after `Tab` or `Esc` |
+| POST | `/dsh-prompt-predict/select` | `{ sessionId, round, candidate, suggestion, truncated }` → remember a candidate issued by the Host for this round |
 
 Every endpoint accepts an optional **`x-dsh-locale`** header (`zh` / `en`, default Chinese) deciding which language validation errors and prediction failures come back in. The client sends the active UI language automatically.
 
@@ -224,7 +229,7 @@ The client is built from ordered fragments in `client/src/` (`npm run build:clie
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 151 host-side + 247 client render cases
+npm test        # 178 host-side + 257 client render cases
 ```
 
 ```
@@ -310,7 +315,8 @@ The tests need no DSH runtime: a fake ctx plus a local HTTP server cover route r
 
 - Verified only on DSH `0.2.2-rc.5`; other versions untested
 - Depends on the host's `conversation.composer.dock` and `settings.section` slot names — a major DSH update may require adapting
-- Predictions consume quota on the selected model; pinning a fast small model is cheaper than following a reasoning model
+- New predictions consume quota on the selected model; cache hits don't call the model
+- Restoring after a Host restart requires a profile directory and a way for DSH to validate the round. For sessions not loaded in the Host, this uses DSH's optional read-only session query service. If validation is unavailable, the plugin does not reuse the saved text. Running multiple Host processes against the same profile concurrently is not supported by this cache.
 
 ## 📄 License
 

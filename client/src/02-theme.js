@@ -100,14 +100,14 @@
     }
     function dim(style, busy) { return busy ? Object.assign({}, style, { opacity: .55, cursor: "not-allowed" }) : style; }
 
-    function api(path, body) {
+    function api(path, body, options) {
       var controller = new AbortController();
       var timer = setTimeout(function () { controller.abort(); }, 15000);
       var langHeader = { "x-dsh-locale": currentLang() };
       var opts = body === undefined
         ? { headers: langHeader }
         : { method: "POST", headers: Object.assign({ "content-type": "application/json" }, langHeader), body: JSON.stringify(body) };
-      return fetch("./dsh-prompt-predict/" + path, Object.assign({}, opts, { signal: controller.signal }))
+      return fetch("./dsh-prompt-predict/" + path, Object.assign(opts, options, { signal: controller.signal }))
         .then(function (r) { return r.json(); })
         .finally(function () { clearTimeout(timer); });
     }
@@ -421,9 +421,18 @@
       return Boolean(editorText(sessionId));
     }
 
-    // Tab 采纳的放宽规则：ghost 可见时，除了其它文本输入/下拉框和对话框，
+    function isOtherSession(sessionId, node) {
+      try {
+        var scope = node && node.closest && node.closest('[data-conversation-session]');
+        var id = scope && scope.getAttribute && scope.getAttribute('data-conversation-session');
+        return Boolean(id && id !== sessionId);
+      } catch { return false; }
+    }
+
+    // Tab 采纳的放宽规则：ghost 可见时，除了其它会话、文本输入/下拉框和对话框，
     // 任何焦点位置都可以采纳；工具栏/消息操作按钮不再让 Tab 跑掉。
     function canAcceptTabEverywhere(sessionId, event) {
+      if (isOtherSession(sessionId, document.activeElement) || isOtherSession(sessionId, event && event.target)) return false;
       try {
         var ed = findEditor(sessionId);
         var inEditor = function (node) {
@@ -456,6 +465,7 @@
 
     // 快捷键只能在当前 composer 聚焦时接管；否则 Tab 应该正常用于焦点移动。
     function isComposerFocused(sessionId, event) {
+      if (isOtherSession(sessionId, document.activeElement) || isOtherSession(sessionId, event && event.target)) return false;
       try {
         var ed = findEditor(sessionId);
         if (!ed) return false;

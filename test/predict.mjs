@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import http from 'node:http';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, recentMessages, trimMessageText, normalizeSuggestion, predictNextPrompt, detectLanguage, detectConversationLanguage, buildSystem } from '../lib/predict.mjs';
@@ -86,6 +86,14 @@ let truncateNext = false;  // 让下一次调用返回「被输出上限截断�
 let emptyTruncateNext = false;  // 让下一次调用返回「空正文 + max-tokens」
 let emptyStopCount = 0;   // 接下来 N 次返回「空正文 + stop」
 let fullTextNext = false; // 下一次把完整正文放在 text 块（不是 text-delta）
+let nextStreamGate = null;
+function holdNextStream() {
+  let start, release;
+  const started = new Promise((resolve) => { start = resolve; });
+  const released = new Promise((resolve) => { release = resolve; });
+  nextStreamGate = { start, released };
+  return { started, release };
+}
 const fakeSession = {
   id: 'session-test',
   requestHeader: () => ({ config: { provider: 'provider-current', model: 'model-current' } }),
@@ -98,12 +106,21 @@ const fakeSession = {
 const fakeSession2 = { ...fakeSession, id: 'session-dedupe' };
 // 干净会话：专门测「截断后放宽重试」，避免被「上一条建议」的去重记忆干扰
 const fakeSession3 = { ...fakeSession, id: 'session-widen' };
+const pendingSessions = new Map(['resume-a', 'resume-b'].map((id) => [
+  id, { ...fakeSession, id, seq: 9, surface: { nodes: [3, 8], contentGeneration: 0 } },
+]));
 const fakeCtx = {
   agentDefaultModel: { currentSelection: () => ({ provider: 'provider-default', model: 'model-default' }) },
   llm: {
     async *stream(options) {
       captured = options;
       streamCalls.push(options);
+      if (nextStreamGate) {
+        const gate = nextStreamGate;
+        nextStreamGate = null;
+        gate.start();
+        await gate.released;
+      }
       // 模拟「档位不被模型支持」：带 reasoningEffort 就失败，用于验证降级重试
       if (failWhenEffort && options.reasoningEffort) {
         throw new Error('reasoning effort not supported by this model');
@@ -304,17 +321,40 @@ check('兼容 text 块形式的完整正文', fullTextRun.suggestion === '全量
 let route;
 let cleaned = false;
 const cleanups = [];
+const coldSessions = new Map();
+const coldInspections = [];
+let attachQuery;
+let releaseQuery;
+const coldQuery = {
+  async inspectSession(id, read, signal) {
+    coldInspections.push(id);
+    signal.throwIfAborted();
+    const session = coldSessions.get(id);
+    if (!session) throw new Error('stored session not found');
+    return read(session);
+  },
+};
+const profileDir = join(process.env.DSH_HOME, 'profiles', 'test');
+const pendingPath = join(profileDir, 'dsh-prompt-predict', 'pending.json');
 const ctx = {
+  get: (key) => key === 'profileContext' ? { dir: profileDir } : undefined,
+  inject(keys, fn) {
+    if (keys.includes('sessionQuery')) {
+      attachQuery = () => fn({ sessionQuery: coldQuery, effect(callback) { releaseQuery = callback(); } });
+      attachQuery();
+    }
+  },
   sessions: { get: (id) => {
     if (id === 'session-test') return fakeSession;
     if (id === 'session-dedupe') return fakeSession2;
     if (id === 'session-widen') return fakeSession3;
+    if (pendingSessions.has(id)) return pendingSessions.get(id);
     if (id === 'session-empty-retry' || id === 'session-empty-error' || id === 'session-fulltext' || id === 'session-near' || id === 'session-stream' || id === 'session-stream-retry' || id === 'session-stream-coalesce' || id === 'session-multiline' || id === 'session-stream-error' || id === 'session-prefix' || /^session-lru-\d+$/.test(id)) return { ...fakeSession, id };
     return undefined;
   } },
   llm: fakeCtx.llm,
   agentDefaultModel: fakeCtx.agentDefaultModel,
-  connection: { requestRejection: () => undefined },
+  connection: { requestRejection: (req) => req.headers['x-test-unauthorized'] ? 401 : undefined },
   webServer: { register: (value) => { route = value; return () => { cleaned = true; }; } },
   effect(fn) { const cleanup = fn(); if (typeof cleanup === 'function') cleanups.push(cleanup); },
 };
@@ -322,9 +362,13 @@ apply(ctx, { timeoutMs: 3000, catalogTimeoutMs: 100 });
 check('注册 Host 前缀路由', route?.kind === 'prefix' && route.path === '/dsh-prompt-predict', `${route?.kind} ${route?.path}`);
 check('登记 effect 清理函数', cleanups.length === 1, String(cleanups.length));
 
-const server = http.createServer((req, res) => route.handler(req, res));
-await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-const port = server.address().port;
+let server, port;
+async function openServer() {
+  server = http.createServer((req, res) => route.handler(req, res));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  port = server.address().port;
+}
+await openServer();
 function request(path, method = 'GET', body, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const payload = body === undefined ? null : JSON.stringify(body);
@@ -783,6 +827,194 @@ check('中英 host 词典 key 对称',
   `zh=${Object.keys(MESSAGES.zh).length} en=${Object.keys(MESSAGES.en).length}`);
 
 check('不带语言头时回落中文', /上下文预算/.test(noHeader.json.reason ?? ''), String(noHeader.json.reason));
+
+// Composer persistence: requests run through the same authorized route, with a mock LLM.
+{
+  const post = async (action, body) => (await request(`/dsh-prompt-predict/${action}`, 'POST', body)).json;
+  const auto = (sessionId, extra = {}) => post('suggest', { sessionId, composer: 'auto', ...extra });
+  const a = pendingSessions.get('resume-a');
+  const b = pendingSessions.get('resume-b');
+  customText = '好呀，先看看这一部分';
+  const firstA = await auto(a.id);
+  check('新一轮首次生成，返回轮次和候选标识', firstA.ok === true && !!firstA.round && !!firstA.candidate
+    && firstA.suggestion === customText && !firstA.restored && captured.purpose === 'prompt-prediction');
+  customText = '请给我看验证结果';
+  const firstB = await auto(b.id);
+  const beforeReturn = streamCalls.length;
+  const backToA = await auto(a.id, { stream: true });
+  check('A→B→A 恢复各自原句，返回 JSON 缓存且没有再调模型', firstA.suggestion !== firstB.suggestion
+    && backToA.restored === true && backToA.suggestion === firstA.suggestion && backToA.round === firstA.round
+    && backToA.candidate === firstA.candidate && streamCalls.length === beforeReturn);
+  a.seq += 1;
+  const afterMetadata = await auto(a.id);
+  check('仅追加日志元数据不改变轮次或触发辅助调用', afterMetadata.restored === true
+    && afterMetadata.suggestion === firstA.suggestion && streamCalls.length === beforeReturn);
+
+  const manual = await requestRaw('/dsh-prompt-predict/suggest', 'POST', {
+    sessionId: a.id, composer: 'manual', reroll: true, avoid: firstA.suggestion, stream: true,
+  });
+  const manualEvents = manual.body.trim().split('\n').map((line) => JSON.parse(line));
+  const rerollDone = manualEvents.find((event) => event.type === 'done');
+  check('显式换一条推理，流式 start 和 done 标记当前轮次', streamCalls.length > beforeReturn
+    && manualEvents[0]?.round === firstA.round && rerollDone?.round === firstA.round
+    && rerollDone?.suggestion !== firstA.suggestion && !!rerollDone?.candidate && rerollDone.rerollCount === 1);
+  const oldChoice = {
+    sessionId: a.id, round: firstA.round, candidate: firstA.candidate,
+    suggestion: firstA.suggestion, truncated: firstA.truncated,
+  };
+  const countBeforeSelect = streamCalls.length;
+  const fakeChoice = await post('select', { ...oldChoice, suggestion: '不是模型返回的文字' });
+  const crossChoice = await post('select', { ...oldChoice, sessionId: b.id });
+  const stillRerolled = await auto(a.id);
+  const chosen = await post('select', oldChoice);
+  const selected = await auto(a.id);
+  check('历史选中句只接受本轮生成的候选标识，不接受改写或串会话', !fakeChoice.ok && !crossChoice.ok
+    && stillRerolled.suggestion === rerollDone?.suggestion && chosen.ok && selected.suggestion === firstA.suggestion
+    && selected.rerollCount === 1 && streamCalls.length === countBeforeSelect);
+  await request('/dsh-prompt-predict/settings', 'POST', { switchLimit: 1 });
+  const limited = await post('suggest', { sessionId: a.id, composer: 'manual', reroll: true, avoid: selected.suggestion });
+  check('同轮已达到重抽次数时不再调用模型', limited.restored === true && limited.suggestion === selected.suggestion
+    && limited.rerollCount === 1 && limited.switchLimit === 1 && streamCalls.length === countBeforeSelect);
+  await request('/dsh-prompt-predict/settings', 'POST', { switchLimit: 3 });
+
+  const preview = await post('suggest', { sessionId: a.id });
+  const afterPreview = await auto(a.id);
+  check('设置试跑不读取或改写待用灰字', preview.ok === true && !preview.round && !preview.restored
+    && afterPreview.restored === true && afterPreview.suggestion === firstA.suggestion);
+  const auth = await request('/dsh-prompt-predict/dismiss', 'POST', { sessionId: a.id, round: firstA.round }, { 'x-test-unauthorized': '1' });
+  check('待用状态不能由未验证的请求修改', auth.status === 401 && (await auto(a.id)).restored === true);
+  const dismissed = await post('dismiss', { sessionId: b.id, round: firstB.round });
+  const afterDismiss = await auto(b.id, { stream: true });
+  check('消耗同轮建议保留标记，不重问且不影响另一会话', dismissed.ok === true
+    && afterDismiss.code === 'suggestion_suppressed' && (await auto(a.id)).restored === true);
+
+  // Restart with *no* live Session. Replayed histories are available only via the read-only query API.
+  const saved = JSON.parse(readFileSync(pendingPath, 'utf8'));
+  const savedEntries = new Map(saved.entries);
+  check('当前 profile 仅存轮次、待用句或消耗标记、重抽次数，无对话、草稿或候选签名', saved.version === 1 && savedEntries.size === 2
+    && !existsSync(join(process.env.DSH_HOME, 'dsh-prompt-predict', 'pending.json'))
+    && JSON.stringify(savedEntries.get(a.id)) === JSON.stringify({ round: firstA.round, suggestion: firstA.suggestion, truncated: false, rerollCount: 1 })
+    && JSON.stringify(savedEntries.get(b.id)) === JSON.stringify({ round: firstB.round, dismissed: true, rerollCount: 0 }));
+  await new Promise((resolve) => server.close(resolve));
+  cleanups.pop()();
+  for (const session of [a, b]) {
+    pendingSessions.delete(session.id);
+    coldSessions.set(session.id, { id: session.id, surface: { ...session.surface, nodes: [...session.surface.nodes] } });
+  }
+  apply(ctx, { timeoutMs: 3000, catalogTimeoutMs: 100 });
+  await openServer();
+  const beforeRestart = streamCalls.length;
+  const beforeCold = coldInspections.length;
+  const coldUnauthorized = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: a.id, composer: 'auto' }, { 'x-test-unauthorized': '1' });
+  const noCandidate = await auto('cold-without-cache');
+  check('未授权或无缓存的冷会话不读取持久会话内容', coldUnauthorized.status === 401
+    && noCandidate.code === 'session_not_found' && coldInspections.length === beforeCold);
+  releaseQuery();
+  const withoutQuery = await auto(a.id);
+  check('可选只读服务不可用时不盲信缓存，也不请求模型', withoutQuery.code === 'session_not_found'
+    && coldInspections.length === beforeCold && streamCalls.length === beforeRestart);
+  attachQuery();
+  const restartedA = await auto(a.id);
+  const restartedB = await auto(b.id);
+  check('重启后仍是冷会话：只读校验同轮才恢复原句和次数，已消耗的句子不复活', restartedA.restored === true
+    && restartedA.suggestion === firstA.suggestion && restartedA.candidate !== firstA.candidate && restartedA.rerollCount === 1
+    && restartedB.code === 'suggestion_suppressed' && !pendingSessions.size
+    && coldInspections.slice(beforeCold).join(',') === `${a.id},${b.id}` && streamCalls.length === beforeRestart);
+  const coldManual = await post('suggest', { sessionId: a.id, composer: 'manual', reroll: true, avoid: firstA.suggestion });
+  check('冷会话重抽保留原句并说明未重抽，不激活或跑模型', coldManual.restored === true && coldManual.detached === true
+    && coldManual.suggestion === firstA.suggestion && coldManual.rerollCount === 1 && !pendingSessions.size
+    && streamCalls.length === beforeRestart);
+  const coldDismiss = await post('dismiss', { sessionId: a.id, round: restartedA.round });
+  check('恢复后可在冷会话采纳或忽略，磁盘记住已处理', coldDismiss.ok === true
+    && (await auto(a.id)).code === 'suggestion_suppressed' && streamCalls.length === beforeRestart);
+  coldSessions.get(a.id).surface.contentGeneration += 1;
+  const changedCold = await auto(a.id);
+  check('冷会话实际轮次已变则拒绝旧标记，不为冷空缓存运行模型', changedCold.code === 'session_not_found'
+    && streamCalls.length === beforeRestart);
+  const revivedChoice = await post('select', {
+    sessionId: b.id, round: firstB.round, candidate: firstB.candidate, suggestion: firstB.suggestion, truncated: firstB.truncated,
+  });
+  check('历史选择不能复活已消耗的同轮建议', revivedChoice.ok === false && (await auto(b.id)).code === 'suggestion_suppressed');
+  for (const session of [a, b]) {
+    pendingSessions.set(session.id, { ...session, surface: coldSessions.get(session.id).surface });
+    coldSessions.delete(session.id);
+  }
+  const explicit = await post('suggest', { sessionId: b.id, composer: 'manual', reroll: true, avoid: firstB.suggestion });
+  check('忽略之后显式请求仍可生成新建议', explicit.ok === true && explicit.round === firstB.round
+    && explicit.suggestion !== firstB.suggestion && (await auto(b.id)).suggestion === explicit.suggestion);
+
+  const activeA = pendingSessions.get(a.id);
+  activeA.surface.nodes.push(13);
+  const newReply = await auto(a.id);
+  check('新完成回复附加新节点，必须走新轮生成', newReply.ok === true && !newReply.restored && newReply.round !== firstA.round);
+  activeA.surface.contentGeneration += 1; // Same visible text and tail; a positional edit still invalidates.
+  const edited = await auto(a.id);
+  const oldDismiss = await post('dismiss', { sessionId: a.id, round: newReply.round });
+  check('同字编辑或重试改变 surface 版本；迟到的旧轮 dismiss 不影响新轮', edited.ok === true
+    && !edited.restored && edited.round !== newReply.round && oldDismiss.code === 'suggestion_stale'
+    && (await auto(a.id)).suggestion === edited.suggestion);
+
+  const gate = holdNextStream();
+  const racing = post('suggest', { sessionId: a.id, composer: 'manual', reroll: true, avoid: edited.suggestion });
+  await gate.started;
+  activeA.surface.contentGeneration += 1;
+  gate.release();
+  const stale = await racing;
+  const newAfterRace = await auto(a.id);
+  check('改轮前已开跑的旧模型结果不能写入新缓存', stale.code === 'suggestion_stale'
+    && newAfterRace.ok === true && !newAfterRace.restored && newAfterRace.round !== edited.round);
+
+  const dismissGate = holdNextStream();
+  const pendingReroll = post('suggest', { sessionId: a.id, composer: 'manual' });
+  await dismissGate.started;
+  await post('dismiss', { sessionId: a.id, round: newAfterRace.round });
+  dismissGate.release();
+  check('在飞生成不能覆盖 Tab/Esc 的消耗标记', (await pendingReroll).code === 'suggestion_stale'
+    && (await auto(a.id)).code === 'suggestion_suppressed');
+
+  const optOutGate = holdNextStream();
+  customText = '看一下不保存的结果';
+  const optOutReroll = post('suggest', { sessionId: a.id, composer: 'manual' });
+  await optOutGate.started;
+  const hadCache = existsSync(pendingPath);
+  const optedOut = await post('settings', { historySize: 0 });
+  const purgedOnSave = !existsSync(pendingPath);
+  optOutGate.release();
+  const privateEntry = await optOutReroll;
+  const privateHit = await auto(a.id);
+  check('关闭历史当场清除磁盘缓存；飞行中结果只能在内存恢复', hadCache && optedOut.effective.historySize === 0
+    && purgedOnSave && privateEntry.ok && privateHit.restored && privateHit.suggestion === privateEntry.suggestion
+    && privateEntry.candidate.startsWith('memory.') && !existsSync(pendingPath));
+
+  await post('settings', { historySize: 10 });
+  customText = '确认重新开启历史之后的结果';
+  const newPublic = await post('suggest', { sessionId: a.id, composer: 'manual' });
+  const diskAfterOptIn = JSON.parse(readFileSync(pendingPath, 'utf8'));
+  check('重新开启历史后仅保存新生成，之前的内存条目不会补写', newPublic.ok && diskAfterOptIn.entries.length === 1
+    && diskAfterOptIn.entries[0][0] === a.id && diskAfterOptIn.entries[0][1].suggestion === newPublic.suggestion);
+  const choosePrivate = await post('select', {
+    sessionId: a.id, round: privateEntry.round, candidate: privateEntry.candidate,
+    suggestion: privateEntry.suggestion, truncated: privateEntry.truncated,
+  });
+  check('重新开启后从会话内历史选回原内存建议，仍不写盘', choosePrivate.ok && !existsSync(pendingPath)
+    && (await auto(a.id)).suggestion === privateEntry.suggestion);
+
+  // Simulate another host or an out-of-band setting change before this host boots.
+  await post('suggest', { sessionId: a.id, composer: 'manual' });
+  writeSettings({ historySize: 0 });
+  await new Promise((resolve) => server.close(resolve));
+  cleanups.pop()();
+  const beforeOptOutRestart = existsSync(pendingPath);
+  apply(ctx, { timeoutMs: 3000, catalogTimeoutMs: 100 });
+  await openServer();
+  const afterPrivateRestart = await auto(a.id);
+  check('已关闭历史的 Host 启动时不读取旧缓存且清理其文件', beforeOptOutRestart
+    && afterPrivateRestart.ok && !afterPrivateRestart.restored && !existsSync(pendingPath));
+  await post('settings', { historySize: 10 });
+  customText = null;
+  const unsupported = await auto(fakeSession.id);
+  check('旧 Host 缺持久轮次数据时仍可生成，避免不安全的会话级恢复', unsupported.ok === true && !unsupported.round && !unsupported.restored);
+}
 
 await new Promise((resolve) => server.close(resolve));
 for (const cleanup of cleanups) cleanup();

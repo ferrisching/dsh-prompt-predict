@@ -146,9 +146,11 @@ pnpm add /path/to/dsh-prompt-predict
 | `↓` | 生成下一条建议（计入「最大切换次数」）；本轮已有后续建议时则免费前进。没有建议且输入框为空时直接拉一条。纯 ↓ 被系统/输入法吞掉时可用 `Ctrl/⌘+↓` |
 | `↑` | 回到本轮的上一条建议（免费） |
 | `Ctrl/⌘+Shift+Space` | 手动触发一次预测；已有建议时等同换一条 |
-| 直接开始打字 | 建议消失；**把草稿删空它还会回来**（只有 `Esc` 是永久忽略） |
+| 直接开始打字 | 暂时隐藏建议；**把草稿删空，它还会回来** |
 
-建议只在输入框为空、且当前会话不在运行中时出现；切换会话、中断回复都会清掉旧建议。
+建议只在输入框为空、且当前会话没有运行时显示。切回会话或重开 DSH 后，如果仍是同一轮且有缓存，就恢复上次选中的那条，不再调用模型。`Tab` 采纳或 `Esc` 忽略后，同一轮不再自动恢复；仍可以手动请求。新回复、编辑或重试一旦改变会话上下文，就不会恢复旧建议。
+
+恢复时只保留选中的建议和已用切换次数，不恢复 `↑` / `↓` 的候选列表。仅以只读状态打开的旧会话可以恢复并采纳原句；继续对话后才可重新生成。
 
 ## ⚙️ 设置
 
@@ -176,6 +178,7 @@ pnpm add /path/to/dsh-prompt-predict
 - 点击「保存」后**立即生效**，无需重启 DSH
 - 设置落盘在 `~/.dsh/dsh-prompt-predict/config.json`（权限 600）
 - 优先级：**用户保存的设置 > cordis patch 部署默认 > 内置默认**
+- 待用建议和「最近预测」是两份数据。Host 在当前 DSH profile 下的 `dsh-prompt-predict/pending.json` 为每个会话保留一条选中的建议（或已采纳/忽略标记）、轮次和切换次数，最多 256 个会话。缓存不保存对话原文、草稿或其它候选，也不会上传。把**记录条数**设为 `0` 会清除当前 profile 的磁盘缓存，只能在同一个 Host 进程内恢复；重新开启历史也不会补存关闭期间生成的建议。
 
 ## 🔌 HTTP 接口
 
@@ -187,7 +190,9 @@ pnpm add /path/to/dsh-prompt-predict
 | GET | `/dsh-prompt-predict/catalog` | 全部 provider 与模型（供下拉选择） |
 | GET | `/dsh-prompt-predict/efforts?provider=&model=` | 该模型真实支持的思考档位 |
 | POST | `/dsh-prompt-predict/settings` | 保存设置；`{ "reset": true }` 恢复默认 |
-| POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → 一条建议 |
+| POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → 一条建议；输入框附带 `composer: 'auto'` 优先恢复，或附带 `'manual'` 手动请求 |
+| POST | `/dsh-prompt-predict/dismiss` | `{ sessionId, round }` → `Tab` 采纳或 `Esc` 忽略后标记本轮已处理 |
+| POST | `/dsh-prompt-predict/select` | `{ sessionId, round, candidate, suggestion, truncated }` → 记住 Host 签发的同轮候选 |
 
 所有接口都认一个可选请求头 **`x-dsh-locale`**（`zh` / `en`，缺省即中文）：它决定校验错误与预测失败原因用哪种语言返回。客户端会自动带上当前界面语言。
 
@@ -223,7 +228,7 @@ pnpm add /path/to/dsh-prompt-predict
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 151 项 Host 端 + 247 项客户端渲染
+npm test        # 178 项 Host 端 + 257 项客户端渲染
 ```
 
 ```
@@ -309,7 +314,8 @@ npm test        # 151 项 Host 端 + 247 项客户端渲染
 
 - 仅在 DSH `0.2.2-rc.5` 上验证过，其它版本未测
 - 依赖宿主的 `conversation.composer.dock` 与 `settings.section` 两个 slot 名称，DSH 大版本调整后可能需要适配
-- 联想会消耗所选模型的额度；固定到快速小模型比跟随推理模型更省
+- 新生成的建议会消耗所选模型的额度；命中缓存时不会调用模型
+- 重启 Host 后恢复需要 profile 目录以及可校验的轮次。对于尚未载入 Host 的会话，插件使用 DSH 可选的只读会话查询服务；校验不了就不会复用原句。缓存不支持多个 Host 进程同时使用同一个 profile。
 
 ## 📄 许可
 

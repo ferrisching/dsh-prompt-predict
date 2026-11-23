@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [Unreleased]
+
+### Added
+
+- **Restore pending suggestions.** Switching sessions or reopening DSH can restore the selected suggestion for the same conversation round without another model call. Accepting or dismissing it prevents automatic restoration for that round. With history turned off, pending suggestions stay in memory only.
+
 ## [0.2.22] — 2026-11-23
 
 ### Added
