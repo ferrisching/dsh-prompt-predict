@@ -25,6 +25,7 @@
       var _mc = useState(6000), maxChars = _mc[0], setMaxChars = _mc[1];
       var _mt = useState(120), outputChars = _mt[0], setOutputChars = _mt[1];
       var _ml = useState(true), multiline = _ml[0], setMultiline = _ml[1];   // 多行建议开关
+      var _min = useState(false), minimalDisplay = _min[0], setMinimalDisplay = _min[1];
       var _sw = useState(true), switchEnabled = _sw[0], setSwitchEnabled = _sw[1];   // 是否允许切换建议
       var _slim = useState(3), switchLimit = _slim[0], setSwitchLimit = _slim[1];   // 最大切换次数
       var _hs = useState(10), historySize = _hs[0], setHistorySize = _hs[1];
@@ -156,6 +157,7 @@
           setMaxChars(eff.maxChars || 6000);
           setOutputChars(eff.outputChars || 120);
           setMultiline(eff.multilineSuggestions !== false);
+          setMinimalDisplay(eff.minimalDisplay === true);
           setSwitchEnabled(eff.switchEnabled !== false);
           setSwitchLimit(typeof eff.switchLimit === "number" ? eff.switchLimit : 3);
           setHistorySize(typeof eff.historySize === "number" ? eff.historySize : 10);
@@ -230,8 +232,8 @@
       }
 
       function save() {
-        setBusy(true); setMsg(null);
-        api("settings", {
+        // 只改显示偏好时，不重新提交或校验原先选择的模型和思考档位。
+        var patch = dirty ? {
           provider: provider, model: model,
           timeoutMs: timeoutSec * 1000,
           maxMessages: ctxSize,
@@ -243,9 +245,21 @@
           historySize: historySize,
           suggestionLanguage: suggestionLanguage,
           reasoningEffort: effort,
-        }).then(function (j) {
-          if (j && j.ok) { trimHistoryToLimit(historySize); notifySettings(j.effective); setMsg({ ok: true, text: tt(t, "settings.saved") }); setDirty(false); loadAll(); }
-          else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
+        } : {};
+        if (minimalDisplayChanged) patch.minimalDisplay = minimalDisplay;
+        setBusy(true); setMsg(null);
+        api("settings", patch).then(function (j) {
+          if (j && j.ok) {
+            if (dirty) trimHistoryToLimit(historySize);
+            if (j.effective) {
+              setSt(Object.assign({}, st, { effective: j.effective }));
+              setMinimalDisplay(j.effective.minimalDisplay === true);
+            }
+            notifySettings(j.effective);
+            setMsg({ ok: true, text: tt(t, "settings.saved") });
+            setDirty(false);
+            loadAll();
+          } else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
         }).catch(function (e) { setMsg({ ok: false, text: String(e) }); })
           .finally(function () { setBusy(false); });
       }
@@ -297,6 +311,9 @@
       if (!st) return h("div", { style: SS.card, dir: "auto" }, h("p", { style: SS.muted }, tt(t, "settings.loading")));
       var eff = st.effective || {};
       var enabled = eff.enabled !== false;
+      var minimalDisplayChanged = minimalDisplay !== (eff.minimalDisplay === true);
+      var minimalDisplayHintId = "dsh-prompt-predict-minimal-display-hint";
+      var saveDisabled = busy || (!dirty && !minimalDisplayChanged);
 
       return h("div", { style: SS.card, dir: "auto" },
         h("p", { style: SS.title },
@@ -356,6 +373,15 @@
             h("span", { style: SS.toggleThumb(enabled) })),
           h("span", { style: SS.muted }, enabled ? tt(t, "settings.on") : tt(t, "settings.off"))),
         h("p", { style: SS.muted }, tt(t, "settings.shortcutHint")),
+        h("div", { style: SS.row },
+          h("span", { style: SS.label }, tt(t, "settings.minimalDisplay")),
+          h("button", {
+            type: "button", style: dim(SS.toggleTrack(minimalDisplay), !enabled || busy), disabled: !enabled || busy,
+            "data-prompt-predict-minimal-display": "true", "aria-pressed": minimalDisplay,
+            "aria-label": tt(t, "settings.minimalDisplay"), "aria-describedby": minimalDisplayHintId,
+            onClick: function () { setMinimalDisplay(!minimalDisplay); },
+          }, h("span", { style: SS.toggleThumb(minimalDisplay) })),
+          h("span", { id: minimalDisplayHintId, style: SS.hintInline }, tt(t, "settings.minimalDisplayHint"))),
 
         h("div", { style: SS.divider }),
 
@@ -624,7 +650,7 @@
             })()),
 
         h("div", { style: { display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 } },
-          h("button", { style: dim(SS.btnPrimary, busy || !dirty), onClick: save, disabled: busy || !dirty }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
+          h("button", { style: dim(SS.btnPrimary, saveDisabled), onClick: save, disabled: saveDisabled }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
           h("button", { style: dim(SS.btnGhost, busy), onClick: resetDefaults, disabled: busy }, tt(t, "settings.reset")),
           h("button", {
             style: dim(SS.btnGhost, busy), disabled: busy, "data-prompt-predict-try": "true",
@@ -636,6 +662,7 @@
             tryResult.truncated ? h("span", { style: SS.warnInline }, tt(t, "ghost.truncated")) : null,
             h("span", { style: SS.tryMeta }, tryResult.meta))
           : null,
-        msg ? h("p", { style: msg.ok ? SS.ok : SS.err }, msg.text) : null);
+        h("div", { "aria-live": "polite", "aria-atomic": "true" },
+          msg ? h("p", { style: msg.ok ? SS.ok : SS.err }, msg.text) : null));
     }
 

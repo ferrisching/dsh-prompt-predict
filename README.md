@@ -10,7 +10,7 @@
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-prompt-predict" /></a>
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-prompt-predict" /></a>
   <a href="https://github.com/ferrisching/dsh-prompt-predict/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/ferrisching/dsh-prompt-predict" /></a>
-  <img alt="Verified on DSH 0.2.1-rc.3" src="https://img.shields.io/badge/DSH-0.2.1--rc.3-4d6bfe" />
+  <img alt="Verified on DSH 0.2.2-rc.5" src="https://img.shields.io/badge/DSH-0.2.2--rc.5-4d6bfe" />
   <img alt="Zero runtime dependencies" src="https://img.shields.io/badge/dependencies-zero%20runtime-41ba41" />
   <img alt="Host + client plugin" src="https://img.shields.io/badge/shape-host%20%2B%20client-8250df" />
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
@@ -64,7 +64,7 @@ The plugin is published on npm. Options are ordered by convenience.
 **Or the dsh CLI** — pin any published version with pnpm's `@version` syntax:
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.21
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.22
 ```
 
 Replace `--profile` with your own profile (usually `desktop` on the desktop app, `web` for the web build), then **restart DSH**.
@@ -92,8 +92,8 @@ tarball that is on npm (`shasum` matches the registry), which is handy for offli
 pinning an artifact you can verify:
 
 ```bash
-gh release download v0.2.21 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.21.tgz
+gh release download v0.2.22 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.22.tgz
 ```
 
 Same caveat as the CLI route above: add `"dsh-prompt-predict"` to `dsh.profile.bundles` yourself,
@@ -129,14 +129,14 @@ Then open that profile's `package.json` and add `"dsh-prompt-predict"` to the `d
 
 ### Requirements
 
-- Verified on **DSH `0.2.1-rc.3`** (web build; the desktop app runs the same host and client code)
+- Verified on **DSH `0.2.2-rc.5`** (web build; the desktop app runs the same host and client code)
 - `node` / `pnpm`: the install script prefers DSH's own runtime under `~/.dsh/dsh-runtimes/*/dependencies` and only falls back to `PATH`
 - macOS / Linux; Windows untested
 
 ## ⌨️ Usage
 
 1. Chat normally, wait for the assistant to finish its turn, and leave the **composer empty**
-2. About 350 ms later a gray suggestion appears, with `Tab` / `↻` / `Esc` on its right
+2. About 350 ms later a gray suggestion appears, with controls and shortcut hints on its right by default
 3. Pick what you need:
 
 | Action | Effect |
@@ -164,6 +164,7 @@ Suggestions only appear when the composer is empty and the session isn't running
 | Context budget (advanced) | Character cap sent to the helper call, 1000–20000 | 6000 |
 | Output length | How long a suggestion should be, in **characters** (20–400) — no token maths. Pinning a Latin-script language also shows the equivalent in words; CJK stays in characters because word segmentation is undefined there. The host derives a generous token safety cap from it (per language) and writes the character budget into the prompt; a reply that still gets cut is retried with more room and marked **cut off · raise the output length** | 120 |
 | Keep multi-line formatting | Allow code snippets/lists to keep line breaks and indentation (off = always one line) | On |
+| Minimal display | Hide the `Tab` and `↻` buttons and the arrow-key and `Esc` hints next to the ghost text on desktops with a hover-capable fine primary pointer and no coarse pointer. Touch and mixed-input devices keep the usual display and tappable controls. Keyboard shortcuts and status notices are unchanged | Off |
 | Switchable suggestions | When on, ↓ generates the next suggestion and ↑ returns to the previous one (kept in this round's history); off disables arrow switching and the ↻ button | On |
 | Max switches | Max new suggestions generated per round (0–10; `0` = unlimited). Moving back with ↑ does not count | 3 |
 | Reasoning effort (advanced) | Options are **generated from the model actually in use** (the session's model when following it); unsupported levels never appear | Off (fastest, cheapest) |
@@ -173,7 +174,7 @@ Suggestions only appear when the composer is empty and the session isn't running
 
 The bottom of the settings page shows a **recent predictions** list (default 10, adjustable): time, session, model, latency, and whether the reasoning level was auto-downgraded, a reroll happened, the suggestion was truncated by the output cap, or the call failed (with the reason). The list stays folded to the newest run (`▸ Show all` opens the rest), the newest run's suggestion text is expanded by default, and clicking a row's `▸` expands that run's text while collapsing the previous one. Records live in the app's own local storage (the Electron renderer's storage on desktop, the page's `localStorage` on web) and are never uploaded. No more guessing why nothing appeared.
 
-- Changes take effect **immediately** — no DSH restart
+- Click **Save** to apply changes immediately — no DSH restart
 - Settings are stored at `~/.dsh/dsh-prompt-predict/config.json` (mode 600)
 - Precedence: **user-saved settings > cordis patch deploy defaults > built-in defaults**
 
@@ -223,7 +224,7 @@ The client is built from ordered fragments in `client/src/` (`npm run build:clie
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 141 host-side + 225 client render cases
+npm test        # 151 host-side + 247 client render cases
 ```
 
 ```
@@ -237,8 +238,8 @@ npm test        # 141 host-side + 225 client render cases
 ├── client/
 │   └── client.js        Client: composer ghost-text overlay + settings page
 ├── test/
-│   ├── predict.mjs      141 cases: trimming, cleanup, route inheritance, settings validation, degrade-retry, dedup, bilingual errors, HTTP end-to-end
-│   ├── client-render.mjs  225 cases: ghost/settings rendering through a tiny React stand-in, Tab focus matrix, geometry, IME/paste/attachments, both locales
+│   ├── predict.mjs      151 cases: trimming, cleanup, route inheritance, settings validation, degrade-retry, dedup, bilingual errors, HTTP end-to-end
+│   ├── client-render.mjs  247 cases: ghost/settings rendering through a tiny React stand-in, Tab focus matrix, geometry, IME/paste/attachments, both locales
 │   ├── dsh-smoke.mjs      18 real-DSH checks (optional; also hosts the opt-in sidebar probe)
 │   └── README.md          test matrix, real-DSH smoke and right-sidebar probe notes
 ├── scripts/
@@ -307,7 +308,7 @@ The tests need no DSH runtime: a fake ctx plus a local HTTP server cover route r
 
 ## ⚠️ Known limitations
 
-- Verified only on DSH `0.2.1-rc.3`; other versions untested
+- Verified only on DSH `0.2.2-rc.5`; other versions untested
 - Depends on the host's `conversation.composer.dock` and `settings.section` slot names — a major DSH update may require adapting
 - Predictions consume quota on the selected model; pinning a fast small model is cheaper than following a reasoning model
 

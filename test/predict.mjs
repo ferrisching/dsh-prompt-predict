@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, recentMessages, trimMessageText, normalizeSuggestion, predictNextPrompt, detectLanguage, detectConversationLanguage, buildSystem } from '../lib/predict.mjs';
 import { apply } from '../lib/index.js';
+import { writeSettings } from '../lib/config.mjs';
 import { makeT, normalizeLang, listSeparator, MESSAGES } from '../lib/messages.mjs';
 
 // 设置写入走 DSH_HOME，测试必须隔离到临时目录，避免污染真实配置。
@@ -49,6 +50,9 @@ const recent = recentMessages([
 check('只保留最近 user/assistant', JSON.stringify(recent) === JSON.stringify([{ role: 'assistant', text: '回答一' }, { role: 'user', text: '问题二' }]), JSON.stringify(recent));
 
 check('清理建议包装', normalizeSuggestion('```text\n建议：继续完成安装并跑测试\n```') === '继续完成安装并跑测试', normalizeSuggestion('```text\n建议：继续完成安装并跑测试\n```'));
+check('句末标点偏好不在归一化时改写输出',
+  ['先跑测试。', 'Run the tests.', '现在跑吗？', 'Run the tests?', 'Check v1.2.3...', '1. Run the tests.\n   - 保留输出。']
+    .every((text) => normalizeSuggestion(text) === text));
 
 // 多行建议：代码/列表/多段保留结构，普通换行仍压平
 check('多行代码建议保留换行与缩进',
@@ -222,6 +226,14 @@ check('中文对话的系统提示保持 Chinese',
 
 check('默认系统提示不含中文', !/[\u4e00-\u9fff]/.test(buildSystem('Russian')), buildSystem('Russian').slice(0, 60));
 check('系统提示明确点名语言', /in Russian/.test(buildSystem('Russian')) && /in Chinese/.test(buildSystem('Chinese')));
+function hasSuggestionEndingRule(system) {
+  return /^ +Do not end the suggested message with a full stop \(\. or 。\)\.$/m.test(system)
+    && /Keep question marks and other meaningful punctuation/.test(system)
+    && /does not apply to code or lists/.test(system);
+}
+check('中英文、单行和多行提示的句尾规则不限定长短',
+  ['Chinese', 'English'].every((language) => [true, false].every((multiline) =>
+    hasSuggestionEndingRule(buildSystem(language, 120, multiline)))));
 check('关闭多行时强制压成单行',
   normalizeSuggestion('```js\nfunction a() {\n  return 1;\n}\n```', 400, false) === 'function a() { return 1; }',
   JSON.stringify(normalizeSuggestion('```js\nfunction a() {\n  return 1;\n}\n```', 400, false)));
@@ -349,6 +361,8 @@ check('状态接口返回结构', status.status === 200
   && status.json.effective?.provider === 'auto'
   && status.json.effective?.enabled === true, JSON.stringify(status.json.effective ?? status.json));
 check('多行建议默认开启', status.json.effective?.multilineSuggestions === true, String(status.json.effective?.multilineSuggestions));
+check('极简显示默认关闭', status.json.defaults?.minimalDisplay === false
+  && status.json.effective?.minimalDisplay === false, String(status.json.effective?.minimalDisplay));
 check('切换建议默认开启且上限 3',
   status.json.effective?.switchEnabled === true && status.json.effective?.switchLimit === 3,
   JSON.stringify({ enabled: status.json.effective?.switchEnabled, limit: status.json.effective?.switchLimit }));
@@ -359,12 +373,38 @@ check('切换开关与上限可保存',
 const swBad = await request('/dsh-prompt-predict/settings', 'POST', { switchLimit: 11 });
 check('切换上限越界被拒', swBad.json.ok === false && /0–10|0-10/.test(String(swBad.json.reason)), String(swBad.json.reason));
 await request('/dsh-prompt-predict/settings', 'POST', { switchEnabled: true, switchLimit: 3 });
+
+const legacyDisplay = await request('/dsh-prompt-predict/status');
+check('旧设置缺少极简显示字段时默认关闭', legacyDisplay.json.saved?.switchLimit === 3
+  && !Object.hasOwn(legacyDisplay.json.saved ?? {}, 'minimalDisplay')
+  && legacyDisplay.json.effective?.minimalDisplay === false, JSON.stringify(legacyDisplay.json.saved));
+const invalidDisplay = await request('/dsh-prompt-predict/settings', 'POST', { minimalDisplay: 'true' });
+check('极简显示不保存非布尔输入', invalidDisplay.json.ok === true
+  && !Object.hasOwn(invalidDisplay.json.saved ?? {}, 'minimalDisplay')
+  && invalidDisplay.json.effective?.minimalDisplay === false, JSON.stringify(invalidDisplay.json.saved));
+writeSettings({ minimalDisplay: 'true' });
+const malformedDisplay = await request('/dsh-prompt-predict/status');
+check('存量极简显示值不是布尔时回退到关闭', malformedDisplay.json.effective?.minimalDisplay === false,
+  String(malformedDisplay.json.effective?.minimalDisplay));
+const displayOff = await request('/dsh-prompt-predict/settings', 'POST', { minimalDisplay: false });
+check('极简显示可显式保存 false', displayOff.json.ok === true
+  && displayOff.json.saved?.minimalDisplay === false && displayOff.json.effective?.minimalDisplay === false,
+  String(displayOff.json.saved?.minimalDisplay));
+const displayOn = await request('/dsh-prompt-predict/settings', 'POST', { minimalDisplay: true });
+const displayStatus = await request('/dsh-prompt-predict/status');
+check('极简显示可保存 true 并从状态读回', displayOn.json.ok === true
+  && displayOn.json.saved?.minimalDisplay === true && displayOn.json.effective?.minimalDisplay === true
+  && displayStatus.json.saved?.minimalDisplay === true && displayStatus.json.effective?.minimalDisplay === true,
+  String(displayStatus.json.saved?.minimalDisplay));
+
 const suggestion = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
 const missing = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-does-not-exist' });
 check('未知会话返回 session_not_found 代码',
   missing.status === 200 && missing.json.ok === false && missing.json.code === 'session_not_found',
   JSON.stringify(missing.json));
 check('建议接口返回预测', suggestion.status === 200 && suggestion.json.suggestion === '继续，直接实现并安装插件', JSON.stringify(suggestion.json));
+check('建议接口把句尾不用句号的规则交给联想模型',
+  captured.purpose === 'prompt-prediction' && hasSuggestionEndingRule(captured.system));
 check('建议响应带上会话标识', suggestion.json.sessionId === 'session-test', String(suggestion.json.sessionId));
 check('默认跟随当前会话模型', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);
 emptyStopCount = 1;
@@ -589,6 +629,8 @@ const reset = await request('/dsh-prompt-predict/settings', 'POST', { reset: tru
 check('恢复默认清空保存项', reset.json.ok === true && Object.keys(reset.json.saved ?? {}).length === 0
   && reset.json.effective.provider === 'auto' && reset.json.effective.model === 'auto'
   && reset.json.effective.enabled === true, JSON.stringify(reset.json.effective));
+check('恢复默认后关闭极简显示', reset.json.ok === true && reset.json.effective?.minimalDisplay === false,
+  String(reset.json.effective?.minimalDisplay));
 
 // ================= 会话模型 / 新设置项 / 降级重试 / 去重 / reroll =================
 

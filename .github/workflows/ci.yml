@@ -9,12 +9,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+    name: test (node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ matrix.node }}
 
       # 用例自带假 ctx 与本地 HTTP server，不需要 DSH 运行时
       # client.js 是 IIFE 包装的浏览器脚本，测试通过 vm 加载；先单独做一次语法检查，

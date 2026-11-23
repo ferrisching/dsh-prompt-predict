@@ -186,14 +186,31 @@ function makeEnv() {
   };
   const listeners = new Map();
   let dark = false;
-  const mediaListeners = new Set();
+  let pointer = { hover: true, fine: true, coarse: false };
+  const mediaListeners = new Map();
+  const matchesMedia = (query) => query.includes('prefers-color-scheme: dark') ? dark : (
+    (!query.includes('(hover: hover)') || pointer.hover)
+    && (!query.includes('(pointer: fine)') || pointer.fine)
+    && (!query.includes('(not (any-pointer: coarse))') || !pointer.coarse)
+  );
+  const updateMedia = (change) => {
+    const before = [...mediaListeners.keys()].map((query) => [query, matchesMedia(query)]);
+    change();
+    for (const [query, prev] of before) {
+      const matches = matchesMedia(query);
+      if (matches !== prev) emitListeners(mediaListeners, query, { matches });
+    }
+  };
   const window = {
     matchMedia: (query) => ({
-      get matches() { return /dark/.test(query) ? dark : !dark; },
-      addEventListener: (type, fn) => { if (type === 'change') mediaListeners.add(fn); },
-      addListener: (fn) => mediaListeners.add(fn),
+      get matches() { return matchesMedia(query); },
+      addEventListener: (type, fn) => { if (type === 'change') addListener(mediaListeners, query, fn); },
+      removeEventListener: (type, fn) => { if (type === 'change') removeListener(mediaListeners, query, fn); },
+      addListener: (fn) => addListener(mediaListeners, query, fn),
+      removeListener: (fn) => removeListener(mediaListeners, query, fn),
     }),
-    setDark(value) { dark = value; mediaListeners.forEach((fn) => fn({ matches: value })); },
+    setDark(value) { updateMedia(() => { dark = value; }); },
+    setPointer(value) { updateMedia(() => { pointer = value; }); },
     addEventListener: (type, fn) => addListener(listeners, type, fn),
     removeEventListener: (type, fn) => removeListener(listeners, type, fn),
     dispatchEvent: (event) => { emitListeners(listeners, event.type, event); return true; },
@@ -1089,12 +1106,144 @@ check('设置页列出最近预测（含会话标题）',
   await view.settle(2);
   check('关闭切换后隐藏切换次数选项',
     find(view.tree, (n) => n.props && n.props['data-prompt-predict-switch-limit'] === 'true').length === 0, '');
+  find(view.tree, (n) => n.props?.['data-prompt-predict-minimal-display'] === 'true')[0]?.props?.onClick?.();
   find(view.tree, (n) => n.type === 'button' && n.props?.children === '保存')[0]?.props?.onClick?.();
   await view.settle(4);
   const call = inst.env.fetchCalls.filter((c) => c.url.includes('/settings')).at(-1);
   const body = call?.options?.body ? JSON.parse(call.options.body) : {};
   check('保存时提交 switchEnabled:false 与 switchLimit',
     body.switchEnabled === false && body.switchLimit === 3, JSON.stringify(body).slice(0, 160));
+  check('极简显示与其它设置同时改动时一起保存', body.minimalDisplay === true && body.switchEnabled === false);
+}
+
+// 极简显示默认关，来回切换并保存后，立即应用到已经显示的 ghost。
+{
+  // 保存时不应重新提交可能已经下架的固定模型或思考档位。
+  const effective = { provider: 'old-provider', model: 'old-model', reasoningEffort: 'medium' };
+  fetchResult = { suggestion: '继续跑测试', version: '9.9.9', effective };
+  const inst = setup();
+  const dockView = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await dockView.settle(4);
+  const view = mount(inst.react, inst.registered['settings.section'].Component, () => ({}));
+  await view.settle(4);
+  const toggle = () => find(view.tree, (n) => n.props?.['data-prompt-predict-minimal-display'] === 'true')[0];
+  const saveButton = () => find(view.tree, (n) => n.type === 'button' && n.props?.children === '保存')[0];
+  const settingsBody = () => JSON.parse(inst.env.fetchCalls.filter((c) => c.url.includes('/settings')).at(-1)?.options?.body || '{}');
+  const hasControls = () => /Tab.*↓.*↻.*Esc/.test(textOf(dockView.tree));
+  const descriptionId = toggle()?.props?.['aria-describedby'];
+  check('极简显示有可访问名称且默认关闭，桌面照常显示操作',
+    toggle()?.props?.['aria-label'] === '极简显示' && toggle()?.props?.['aria-pressed'] === false && hasControls());
+  check('极简显示开关关联触屏说明',
+    Boolean(descriptionId) && find(view.tree, (n) => n.props?.id === descriptionId).some((n) => /触屏/.test(textOf(n))));
+  toggle()?.props?.onClick?.();
+  dockView.render();
+  check('极简显示未保存前不改变输入框', toggle()?.props?.['aria-pressed'] === true && hasControls());
+  fetchResult.effective = { ...effective, minimalDisplay: true };
+  saveButton()?.props?.onClick?.();
+  await view.settle(3);
+  await dockView.settle(2);
+  check('保存极简显示实时更新可见的桌面建议',
+    JSON.stringify(settingsBody()) === '{"minimalDisplay":true}' && textOf(dockView.tree) === '继续跑测试');
+  check('极简显示保存结果通过状态区通知',
+    find(view.tree, (n) => n.props?.['aria-live'] === 'polite').some((n) => /已保存/.test(textOf(n))));
+  toggle()?.props?.onClick?.();
+  fetchResult.effective = { ...effective, minimalDisplay: false };
+  saveButton()?.props?.onClick?.();
+  await view.settle(3);
+  await dockView.settle(2);
+  check('保存关闭极简显示后恢复同一条建议的操作',
+    JSON.stringify(settingsBody()) === '{"minimalDisplay":false}' && hasControls() && /继续跑测试/.test(textOf(dockView.tree)));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
+// 已保存的极简显示只隐藏操作，不改变键盘或状态提示。
+{
+  const effective = { minimalDisplay: true, switchEnabled: true, switchLimit: 1 };
+  fetchResult = { suggestion: '先补测试', truncated: true, effective };
+  let inserted = '';
+  const inst = setup();
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => ({
+    ...makeProps(''),
+    inputActions: { captureInsertion: () => ({}), insertText: (text) => { inserted = text; return true; } },
+  }));
+  const press = (key) => inst.env.window.dispatchEvent({ type: 'keydown', key, code: key, preventDefault() {}, stopPropagation() {} });
+  const text = () => textOf(view.tree);
+  const suggestions = () => inst.env.fetchCalls.filter((c) => c.url.includes('/suggest')).length;
+  await view.settle(4);
+  check('桌面极简显示隐藏所有操作并保留截断提示',
+    text().startsWith('先补测试') && /已截断/.test(text()) && !/Tab|↻|Esc|↓|↑/.test(text()));
+
+  let release;
+  holdSuggest = new Promise((resolve) => { release = resolve; });
+  const before = suggestions();
+  press('ArrowDown');
+  await view.settle(2);
+  check('极简显示下 ↓ 仍可重抽，并保留生成中提示', /正在生成建议/.test(text()) && suggestions() === before + 1);
+  fetchResult = { suggestion: '再看结果', effective };
+  release();
+  holdSuggest = null;
+  await view.settle(3);
+  check('可回看时桌面也不显示方向键提示', text() === '再看结果');
+  press('ArrowUp');
+  await view.settle(2);
+  check('极简显示下 ↑ 仍可回看', text().startsWith('先补测试') && suggestions() === before + 1);
+  press('ArrowDown');
+  await view.settle(2);
+  press('ArrowDown');
+  await view.settle(2);
+  check('极简显示不隐藏切换上限提示',
+    suggestions() === before + 1 && Boolean(find(view.tree, (n) => n.props?.['data-prompt-predict-notice'] === 'true')[0]));
+  press('Escape');
+  await view.settle(2);
+  check('极简显示下 Esc 仍可忽略', !hasGhost(view.tree));
+  press('ArrowDown');
+  await view.settle(3);
+  press('Tab');
+  await view.settle(2);
+  check('极简显示下 Tab 仍可采纳', inserted === '再看结果' && !hasGhost(view.tree));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
+// 触屏与带粗指针的混合设备，即使启用极简显示也保留可点击操作。
+{
+  const effective = { minimalDisplay: true, switchEnabled: true, switchLimit: 3 };
+  fetchResult = { suggestion: '触屏建议', effective };
+  let inserted = '';
+  const inst = setup();
+  inst.env.window.setPointer({ hover: false, fine: false, coarse: true });
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => ({
+    ...makeProps(''),
+    inputActions: { captureInsertion: () => ({}), insertText: (text) => { inserted = text; return true; } },
+  }));
+  const button = (label) => find(view.tree, (n) => n.type === 'button' && n.props?.children === label)[0];
+  await view.settle(4);
+  check('触屏极简显示保持 Tab 和 ↻ 可点按', Boolean(button('Tab') && button('↻')));
+  inst.env.window.setPointer({ hover: true, fine: true, coarse: false });
+  check('切换到纯鼠标指针时，已显示的建议也收起按钮', textOf(view.tree) === '触屏建议');
+  inst.env.window.setPointer({ hover: false, fine: true, coarse: false });
+  check('精细指针不支持悬停时保留按钮', Boolean(button('Tab') && button('↻')));
+  inst.env.window.setPointer({ hover: true, fine: false, coarse: false });
+  check('主指针不精细时保留按钮', Boolean(button('Tab') && button('↻')));
+  inst.env.window.setPointer({ hover: true, fine: true, coarse: false });
+  inst.env.window.setPointer({ hover: true, fine: true, coarse: true });
+  check('混合触屏设备恢复两个按钮', Boolean(button('Tab') && button('↻')));
+  fetchResult = { suggestion: '新的触屏建议', effective };
+  button('↻')?.props?.onClick?.();
+  await view.settle(3);
+  button('Tab')?.props?.onClick?.();
+  check('混合触屏设备可以点按重抽并采纳新提议', inserted === '新的触屏建议' && !hasGhost(view.tree));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
+}
+
+{
+  fetchResult = { suggestion: '保留操作', effective: { minimalDisplay: true } };
+  const env = makeEnv();
+  delete env.window.matchMedia;
+  const inst = setup(undefined, env);
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(4);
+  check('无法判断指针能力时保留操作', /保留操作.*Tab.*↻.*Esc/.test(textOf(view.tree)));
+  fetchResult = { suggestion: '先补测试再实现', version: '9.9.9' };
 }
 
 // 设置项：多行建议开关（默认开，保存时提交到 Host）

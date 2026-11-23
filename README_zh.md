@@ -10,7 +10,7 @@
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-prompt-predict" /></a>
   <a href="https://www.npmjs.com/package/dsh-prompt-predict"><img alt="npm downloads" src="https://img.shields.io/npm/dm/dsh-prompt-predict" /></a>
   <a href="https://github.com/ferrisching/dsh-prompt-predict/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/ferrisching/dsh-prompt-predict" /></a>
-  <img alt="已验证 DSH 0.2.1-rc.3" src="https://img.shields.io/badge/DSH-0.2.1--rc.3-4d6bfe" />
+  <img alt="已验证 DSH 0.2.2-rc.5" src="https://img.shields.io/badge/DSH-0.2.2--rc.5-4d6bfe" />
   <img alt="零运行时依赖" src="https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-%E9%9B%B6%E8%BF%90%E8%A1%8C%E6%97%B6%E4%BE%9D%E8%B5%96-41ba41" />
   <img alt="客户端 + Host 双端插件" src="https://img.shields.io/badge/%E5%BD%A2%E6%80%81-Host%20%2B%20%E5%AE%A2%E6%88%B7%E7%AB%AF%E6%8F%92%E4%BB%B6-8250df" />
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg" /></a>
@@ -65,7 +65,7 @@
 **或者用 dsh CLI**——想装某个已发布版本就用 pnpm 的 `@版本` 语法：
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.21
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.22
 ```
 
 `--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`），**装完重启 DSH 生效**。
@@ -91,8 +91,8 @@ dsh plugin --profile desktop add dsh-prompt-predict@latest
 **完全一致**的 tarball（`shasum` 与 registry 相同），适合离线机器或需要自行校验产物的场景：
 
 ```bash
-gh release download v0.2.21 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.21.tgz
+gh release download v0.2.22 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.22.tgz
 ```
 
 与上面 CLI 路径同样的注意点：请自己把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles`，
@@ -128,14 +128,14 @@ pnpm add /path/to/dsh-prompt-predict
 
 ### 安装要求
 
-- 已在 **DSH `0.2.1-rc.3`** 上验证（Web 构建；桌面端跑的是同一套 host 与 client 代码）
+- 已在 **DSH `0.2.2-rc.5`** 上验证（Web 构建；桌面端跑的是同一套 host 与 client 代码）
 - `node` / `pnpm`：安装脚本优先使用 `~/.dsh/dsh-runtimes/*/dependencies` 下 DSH 自带的运行时，找不到才回退 `PATH`
 - macOS / Linux；Windows 未验证
 
 ## ⌨️ 使用
 
 1. 正常对话，等助手这一轮回复结束，且**输入框为空**
-2. 约 350 ms 后，输入框里浮出一条灰色建议，右侧是 `Tab` / `↻` / `Esc 忽略` 三个操作
+2. 约 350 ms 后，输入框里浮出一条灰色建议，右侧默认显示按钮和快捷键提示
 3. 按需选择：
 
 | 操作 | 效果 |
@@ -163,6 +163,7 @@ pnpm add /path/to/dsh-prompt-predict
 | 上下文预算（高级） | 送进辅助调用的字符上限，1000–20000 | 6000 |
 | 字数上限 | 建议写多长，按**字符**算（20–400），不用换算 token；选了英文/俄文等拉丁语言时会附带「约 N 个单词」的参考（中文/日文按字，不做词数换算）。Host 会按语言推导一个宽裕的 token 安全网，并把字数预算写进提示词；仍被截断时自动放宽重试，ghost 上会标 **已截断 · 建议调高字数上限** | 120 |
 | 保留多行格式 | 允许代码/列表保留换行与缩进；关闭后一律单行 | 开启 |
+| 极简显示 | 仅在主指针精细且支持悬停、没有粗指针的桌面环境隐藏联想灰字旁的 `Tab` 和 `↻` 按钮及方向键和 `Esc` 提示。触屏和混合输入设备保留原有显示和可点按的按钮；键盘操作和状态提示不变 | 关闭 |
 | 可切换提示词 | 开启后 ↓ 生成下一条、↑ 回到上一条（保留本轮历史）；关闭后方向键不切换，↻ 按钮也隐藏 | 开启 |
 | 最大切换次数 | 每轮最多生成几条新建议（0–10，`0` = 不限）；↑ 回看不计入 | 3 |
 | 思考深度（高级） | 选项**按真实使用的模型动态生成**（跟随会话时按会话模型），模型不支持的档位不会出现 | 关闭（最快最省） |
@@ -172,7 +173,7 @@ pnpm add /path/to/dsh-prompt-predict
 
 设置页底部是**最近预测**列表（默认 10 条，可调）：时间、**哪个会话**、所用模型、耗时，以及是否自动降级了思考档位 / 换过一条 / 被输出上限截断，失败时直接显示原因；列表默认只显示最新一条（`▸ 展开全部` 看其余），最新一条原文默认展开，点其它行的 `▸` 会展开它并自动收起上一条；记录存在应用自身的 `localStorage`（桌面端是 Electron 渲染层，Web 端是页面存储），不会上传——联想出问题时不必靠猜。
 
-- 保存后**立即生效**，无需重启 DSH
+- 点击「保存」后**立即生效**，无需重启 DSH
 - 设置落盘在 `~/.dsh/dsh-prompt-predict/config.json`（权限 600）
 - 优先级：**用户保存的设置 > cordis patch 部署默认 > 内置默认**
 
@@ -222,7 +223,7 @@ pnpm add /path/to/dsh-prompt-predict
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 141 项 Host 端 + 225 项客户端渲染
+npm test        # 151 项 Host 端 + 247 项客户端渲染
 ```
 
 ```
@@ -236,8 +237,8 @@ npm test        # 141 项 Host 端 + 225 项客户端渲染
 ├── client/
 │   └── client.js        客户端：输入框 ghost text 覆盖层 + 设置页
 ├── test/
-│   ├── predict.mjs      141 项用例：文本裁剪、建议清洗、路由继承、设置校验、降级重试、去重、双语错误、接口端到端
-│   ├── client-render.mjs  225 项用例：极简 React 替身渲染 ghost/设置页，覆盖 Tab 焦点矩阵、几何、输入法/粘贴/附件、中英双语
+│   ├── predict.mjs      151 项用例：文本裁剪、建议清洗、路由继承、设置校验、降级重试、去重、双语错误、接口端到端
+│   ├── client-render.mjs  247 项用例：极简 React 替身渲染 ghost/设置页，覆盖 Tab 焦点矩阵、几何、输入法/粘贴/附件、中英双语
 │   ├── dsh-smoke.mjs      18 项真实 DSH 检查（可选；也承载 opt-in 右侧栏探针）
 │   └── README.md          测试矩阵、真实 DSH 冒烟与右侧栏探针说明
 ├── scripts/
@@ -306,7 +307,7 @@ npm test        # 141 项 Host 端 + 225 项客户端渲染
 
 ## ⚠️ 已知限制
 
-- 仅在 DSH `0.2.1-rc.3` 上验证过，其它版本未测
+- 仅在 DSH `0.2.2-rc.5` 上验证过，其它版本未测
 - 依赖宿主的 `conversation.composer.dock` 与 `settings.section` 两个 slot 名称，DSH 大版本调整后可能需要适配
 - 联想会消耗所选模型的额度；固定到快速小模型比跟随推理模型更省
 

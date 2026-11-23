@@ -8,6 +8,37 @@ to the public release process; internal notes stay outside the repository.
 - Node.js and npm available; the repository has zero runtime dependencies.
 - Write access to `ferrisching/dsh-prompt-predict` on GitHub and npm.
 - npm account `ferrisching` with a passkey-capable browser for approval.
+- **Git identity uses the GitHub noreply address**, never a personal email:
+  `ferrisching@users.noreply.github.com`. This repository sets it
+  locally together with `user.useConfigOnly=true`. Before publishing, verify:
+
+  ```bash
+  git log --format='%ae%n%ce' | sort -u
+  ```
+
+  Only the noreply address may appear. Never rewrite this back to a personal
+  address, and do not add a global email fallback for this repository.
+
+## 0. Confirm the running DSH version
+
+Record the DSH version before touching the plugin version, and test against that
+exact version:
+
+```bash
+dsh --version
+npm view @deepseek-ai/dsh dist-tags --json
+gh release list --repo deepseek-ai/deepseek-harness --limit 5
+```
+
+For the desktop nightly channel, also read the feed:
+
+```bash
+curl -sL https://download.deepseek.com/dsh-desk/feeds/mac-arm64/nightly-mac.yml | head -3
+```
+
+If the installed version is not the latest on its channel, decide explicitly
+whether to upgrade first; do not silently test an unknown mix. Put the tested
+DSH version in the release notes or the release commit body.
 
 ## 1. Prepare the version
 
@@ -22,11 +53,41 @@ to the public release process; internal notes stay outside the repository.
    `git push --force-with-lease`. Delete the backup only after the release is
    confirmed.
 
+## 1b. Unblock CI on fork pull requests
+
+GitHub does not run workflows for pull requests opened from forks until a
+maintainer approves them. An unapproved run reports as `action_required`, and
+`gh pr checks <n>` prints `no checks reported` — the checks have not been
+skipped, they are waiting. **Do not review a fork PR as if CI had run.**
+
+List the blocked runs, then approve them:
+
+```bash
+gh run list --limit 20 \
+  --json databaseId,headBranch,event,conclusion,url
+
+gh api -X POST \
+  repos/ferrisching/dsh-prompt-predict/actions/runs/<run-id>/approve
+```
+
+Approve every `action_required` run for the PR's head branch (a branch may have
+several from successive pushes). Wait for the matrix to finish and confirm both
+`test (node 20)` and `test (node 22)` pass:
+
+```bash
+gh pr checks <n>
+```
+
+Only approve workflow runs from contributors you are prepared to let execute
+the CI steps. The workflow runs the repository's own `npm test`, so read the
+PR diff first or at least confirm it does not modify `.github/workflows/`,
+`package.json` scripts or `scripts/` before approving.
+
 ## 2. Verify
 
 ```bash
-npm test          # Host + client suites
-npm run test:smoke # real DSH smoke (optional; requires local installs)
+npm test           # Host + client suites
+npm run test:smoke # required real-DSH smoke (requires local installs)
 npm pack --dry-run --json --ignore-scripts
 ```
 
@@ -82,7 +143,23 @@ gh release create vX.Y.Z /tmp/dsh-prompt-predict-X.Y.Z.tgz \
 ```
 
 Release notes should mirror the CHANGELOG section and include the upgrade
-command. Verify the release asset sha256/sha1 and run a clean install in a
+command. **Every GitHub Release must also contain a `### Verification` section**
+with the exact tested host and smoke count:
+
+```markdown
+### Verification
+
+- Plugin: X.Y.Z
+- DSH: <exact dsh --version output> (<channel>)
+- `npm run test:smoke`: N/N pass
+- Date: YYYY-MM-DD
+```
+
+Append the same row to the **Verification history** table in
+`test/README.md`. A release is incomplete until both records exist; a smoke run
+that was not written down does not count as release evidence.
+
+Verify the release asset sha256/sha1 and run a clean install in a
 temporary directory:
 
 ```bash

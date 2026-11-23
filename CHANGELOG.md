@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.22] — 2026-11-23
+
+### Added
+
+- **Minimal display (#7).** Off by default. When enabled on desktops with a hover-capable fine primary pointer and no coarse pointer, the ghost text stays visible without the `Tab` and `↻` buttons or the arrow-key and `Esc` hints. Touch and mixed-input devices keep the usual display and tappable controls; keyboard shortcuts and status notices are unchanged.
+- **CI covers Node 20 and 22.** The GitHub Actions workflow now runs the test suite on a Node 20/22 matrix.
+
+### Changed
+
+- **Suggestions are asked not to end with a full stop (#9).** The system prompt now tells the helper model to skip a trailing `.` or `。` while keeping question marks and other meaningful punctuation, and excluding code and lists. The client still never rewrites the model output, so code, list numbering and ellipses are untouched.
+
 ## [0.2.21] — 2026-11-13
 
 ### Fixed
@@ -138,7 +149,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- **Compatibility verified on DSH `0.2.1-rc.3`** (the installed desktop build and the current nightly feed), not just `0.2.1-rc.2`.
+- **Compatibility was verified against the then-current DSH nightly**, not just `0.2.1-rc.2`; see the README for the version verified by the current release.
 - **History rows are now a real `<button>`** with the copy control as a sibling, instead of a `role=button` container; keyboard and screen-reader semantics are cleaner.
 - **NDJSON deltas are coalesced every 40 ms** on the Host, with a forced flush before `reset`, `done` and `error`, so fast models no longer produce one event per token.
 - **The client source is split into `client/src/` fragments**, assembled into the single `client/client.js` by `npm run build:client` (`pretest` / `prepack` run it automatically). The generated bundle is byte-identical; behaviour is unchanged.
