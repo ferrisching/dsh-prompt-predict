@@ -49,6 +49,9 @@ const recent = recentMessages([
 check('只保留最近 user/assistant', JSON.stringify(recent) === JSON.stringify([{ role: 'assistant', text: '回答一' }, { role: 'user', text: '问题二' }]), JSON.stringify(recent));
 
 check('清理建议包装', normalizeSuggestion('```text\n建议：继续完成安装并跑测试\n```') === '继续完成安装并跑测试', normalizeSuggestion('```text\n建议：继续完成安装并跑测试\n```'));
+check('句末标点偏好不在归一化时改写输出',
+  ['先跑测试。', 'Run the tests.', '现在跑吗？', 'Run the tests?', 'Check v1.2.3...', '1. Run the tests.\n   - 保留输出。']
+    .every((text) => normalizeSuggestion(text) === text));
 
 // 多行建议：代码/列表/多段保留结构，普通换行仍压平
 check('多行代码建议保留换行与缩进',
@@ -222,6 +225,14 @@ check('中文对话的系统提示保持 Chinese',
 
 check('默认系统提示不含中文', !/[\u4e00-\u9fff]/.test(buildSystem('Russian')), buildSystem('Russian').slice(0, 60));
 check('系统提示明确点名语言', /in Russian/.test(buildSystem('Russian')) && /in Chinese/.test(buildSystem('Chinese')));
+function hasChatPunctuationPreference(system) {
+  return /For short conversational statements or requests, omit the trailing full stop \(\. or 。\) by default/.test(system)
+    && /Keep question marks and other meaningful punctuation/.test(system)
+    && /does not apply to code or lists/.test(system);
+}
+check('中英文、单行和多行提示都限定句末标点偏好的范围',
+  ['Chinese', 'English'].every((language) => [true, false].every((multiline) =>
+    hasChatPunctuationPreference(buildSystem(language, 120, multiline)))));
 check('关闭多行时强制压成单行',
   normalizeSuggestion('```js\nfunction a() {\n  return 1;\n}\n```', 400, false) === 'function a() { return 1; }',
   JSON.stringify(normalizeSuggestion('```js\nfunction a() {\n  return 1;\n}\n```', 400, false)));
@@ -365,6 +376,8 @@ check('未知会话返回 session_not_found 代码',
   missing.status === 200 && missing.json.ok === false && missing.json.code === 'session_not_found',
   JSON.stringify(missing.json));
 check('建议接口返回预测', suggestion.status === 200 && suggestion.json.suggestion === '继续，直接实现并安装插件', JSON.stringify(suggestion.json));
+check('建议接口把句末标点偏好交给联想模型',
+  captured.purpose === 'prompt-prediction' && hasChatPunctuationPreference(captured.system));
 check('建议响应带上会话标识', suggestion.json.sessionId === 'session-test', String(suggestion.json.sessionId));
 check('默认跟随当前会话模型', captured.provider === 'provider-current' && captured.model === 'model-current', `${captured.provider}/${captured.model}`);
 emptyStopCount = 1;
