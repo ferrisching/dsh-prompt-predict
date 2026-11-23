@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [Unreleased]
+
+### Added
+
+- **Minimal display (#7).** Off by default. When enabled on desktops with a hover-capable fine primary pointer and no coarse pointer, the ghost text stays visible without the `Tab` and `↻` buttons or the arrow-key and `Esc` hints. Touch and mixed-input devices keep the usual display and tappable controls; keyboard shortcuts and status notices are unchanged.
+
 ## [0.2.21] — 2026-11-13
 
 ### Fixed

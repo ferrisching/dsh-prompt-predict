@@ -136,7 +136,7 @@ Then open that profile's `package.json` and add `"dsh-prompt-predict"` to the `d
 ## ⌨️ Usage
 
 1. Chat normally, wait for the assistant to finish its turn, and leave the **composer empty**
-2. About 350 ms later a gray suggestion appears, with `Tab` / `↻` / `Esc` on its right
+2. About 350 ms later a gray suggestion appears, with controls and shortcut hints on its right by default
 3. Pick what you need:
 
 | Action | Effect |
@@ -164,6 +164,7 @@ Suggestions only appear when the composer is empty and the session isn't running
 | Context budget (advanced) | Character cap sent to the helper call, 1000–20000 | 6000 |
 | Output length | How long a suggestion should be, in **characters** (20–400) — no token maths. Pinning a Latin-script language also shows the equivalent in words; CJK stays in characters because word segmentation is undefined there. The host derives a generous token safety cap from it (per language) and writes the character budget into the prompt; a reply that still gets cut is retried with more room and marked **cut off · raise the output length** | 120 |
 | Keep multi-line formatting | Allow code snippets/lists to keep line breaks and indentation (off = always one line) | On |
+| Minimal display | Hide the `Tab` and `↻` buttons and the arrow-key and `Esc` hints next to the ghost text on desktops with a hover-capable fine primary pointer and no coarse pointer. Touch and mixed-input devices keep the usual display and tappable controls. Keyboard shortcuts and status notices are unchanged | Off |
 | Switchable suggestions | When on, ↓ generates the next suggestion and ↑ returns to the previous one (kept in this round's history); off disables arrow switching and the ↻ button | On |
 | Max switches | Max new suggestions generated per round (0–10; `0` = unlimited). Moving back with ↑ does not count | 3 |
 | Reasoning effort (advanced) | Options are **generated from the model actually in use** (the session's model when following it); unsupported levels never appear | Off (fastest, cheapest) |
@@ -173,7 +174,7 @@ Suggestions only appear when the composer is empty and the session isn't running
 
 The bottom of the settings page shows a **recent predictions** list (default 10, adjustable): time, session, model, latency, and whether the reasoning level was auto-downgraded, a reroll happened, the suggestion was truncated by the output cap, or the call failed (with the reason). The list stays folded to the newest run (`▸ Show all` opens the rest), the newest run's suggestion text is expanded by default, and clicking a row's `▸` expands that run's text while collapsing the previous one. Records live in the app's own local storage (the Electron renderer's storage on desktop, the page's `localStorage` on web) and are never uploaded. No more guessing why nothing appeared.
 
-- Changes take effect **immediately** — no DSH restart
+- Click **Save** to apply changes immediately — no DSH restart
 - Settings are stored at `~/.dsh/dsh-prompt-predict/config.json` (mode 600)
 - Precedence: **user-saved settings > cordis patch deploy defaults > built-in defaults**
 

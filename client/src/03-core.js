@@ -337,6 +337,25 @@
       var ghostRef = useRef(null);
       var _shift = useState({ x: 0, y: 0 }), shift = _shift[0], setShift = _shift[1];
       var _wp = useState(0), widthPx = _wp[0], setWidthPx = _wp[1];
+      var minimalDisplay = props.minimalDisplay === true;
+      var _dp = useState(false), desktopPointer = _dp[0], setDesktopPointer = _dp[1];
+      var showControls = !minimalDisplay || !desktopPointer;
+
+      // 混合设备即使以鼠标为主指针，也要为触屏保留可点按的按钮。
+      useLayoutEffect(function () {
+        if (!minimalDisplay || typeof window.matchMedia !== "function") return;
+        var media = window.matchMedia("(hover: hover) and (pointer: fine) and (not (any-pointer: coarse))");
+        var update = function () { setDesktopPointer(media.matches === true); };
+        update();
+        if (typeof media.addEventListener === "function") {
+          media.addEventListener("change", update);
+          return function () { media.removeEventListener("change", update); };
+        }
+        if (typeof media.addListener === "function") {
+          media.addListener(update);
+          return function () { media.removeListener(update); };
+        }
+      }, [minimalDisplay]);
 
       // 渲染后按「实际视口位置 vs 期望位置」自校正：无论祖先是否有 transform、
       // 嵌套了几个包含块，都能把 ghost 拉回编辑器坐标。
@@ -556,10 +575,10 @@
           "data-prompt-predict-text": "true",
           style: { color: token("label-tertiary", colors().ghostText) },
         }, suggestion),
-        busy ? null : h("span", {
+        busy || (!showControls && !notice && !truncated) ? null : h("span", {
           style: { display: "inline-flex", alignItems: "center", gap: 6, marginInlineStart: 8, whiteSpace: "nowrap", verticalAlign: "middle" },
         },
-          h("button", {
+          showControls ? h("button", {
             type: "button", onClick: onAccept,
             title: tt(t, "ghost.acceptHint"), "aria-label": tt(t, "ghost.acceptHint"),
             style: {
@@ -567,15 +586,15 @@
               border: "1px solid " + token("border-l1", colors().border), background: token("bg-layer-2", colors().softBg),
               color: token("label-secondary", colors().chipText), fontSize: 11, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer",
             },
-          }, "Tab"),
-          canPrev
+          }, "Tab") : null,
+          showControls && canPrev
             ? h("span", {
               "data-prompt-predict-prev-hint": "true",
               title: tt(t, "ghost.prevHint"),
               style: { color: token("label-tertiary", colors().ghostHint), fontSize: 11, whiteSpace: "nowrap" },
             }, tt(t, "ghost.prevHint"))
             : null,
-          nextAction === "next" || nextAction === "regen"
+          showControls && (nextAction === "next" || nextAction === "regen")
             ? h("span", {
               "data-prompt-predict-replace-hint": "true",
               title: tt(t, nextAction === "next" ? "ghost.nextHint" : "ghost.regenHint"),
@@ -588,7 +607,7 @@
               style: { color: token("label-tertiary", colors().ghostHint), fontSize: 10, whiteSpace: "nowrap" },
             }, notice)
             : null,
-          onReroll
+          showControls && onReroll
             ? h("button", {
               type: "button", onClick: onReroll, title: tt(t, "ghost.reroll"), "aria-label": tt(t, "ghost.reroll"),
               style: {
@@ -598,7 +617,7 @@
               },
             }, "↻")
             : null,
-          h("span", { style: { color: token("label-tertiary", colors().ghostHint), fontSize: 11, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")),
+          showControls ? h("span", { style: { color: token("label-tertiary", colors().ghostHint), fontSize: 11, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")) : null,
           truncated
             ? h("span", {
               // 覆盖层整体 pointer-events:none：这里单独放开，悬停时把设置路径直接展开在文字里

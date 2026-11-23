@@ -29,6 +29,7 @@
       var _me = useState(""), manualError = _me[0], setManualError = _me[1];   // 手动换一条失败的原因
       var _mk = useState("failed"), manualErrorKind = _mk[0], setManualErrorKind = _mk[1];
       var _en = useState(true), enabled = _en[0], setEnabled = _en[1];
+      var _min = useState(false), minimalDisplay = _min[0], setMinimalDisplay = _min[1];
       var _swi = useState(true), switchEnabled = _swi[0], setSwitchEnabled = _swi[1];
       var switchLimitRef = useRef(3);
       var suggestionHistoryRef = useRef([]);
@@ -198,6 +199,7 @@
       useEffect(function () {
         api("status").then(function (j) {
           setEnabled(!(j && j.effective && j.effective.enabled === false));
+          setMinimalDisplay(j?.effective?.minimalDisplay === true);
           setSwitchEnabled(!(j && j.effective && j.effective.switchEnabled === false));
           switchLimitRef.current = Math.min(10, Math.max(0, Math.floor(Number(j && j.effective && j.effective.switchLimit) || 0)));
           if (j && j.effective && typeof j.effective.historySize === "number") {
@@ -210,6 +212,7 @@
         var changed = function (event) {
           var on = event.detail?.enabled !== false;
           setEnabled(on);
+          if (typeof event.detail?.minimalDisplay === "boolean") setMinimalDisplay(event.detail.minimalDisplay);
           if (event.detail && typeof event.detail.switchEnabled === "boolean") setSwitchEnabled(event.detail.switchEnabled);
           if (event.detail && typeof event.detail.switchLimit === "number") {
             switchLimitRef.current = Math.min(10, Math.max(0, Math.floor(event.detail.switchLimit)));
@@ -813,6 +816,7 @@
           onAccept: accept,
           onReroll: switchEnabled ? reroll : null,
           switchEnabled: switchEnabled,
+          minimalDisplay: minimalDisplay,
           canPrev: canPrev,
           nextAction: nextAction,
           notice: switchNotice,

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { messageText, recentMessages, trimMessageText, normalizeSuggestion, predictNextPrompt, detectLanguage, detectConversationLanguage, buildSystem } from '../lib/predict.mjs';
 import { apply } from '../lib/index.js';
+import { writeSettings } from '../lib/config.mjs';
 import { makeT, normalizeLang, listSeparator, MESSAGES } from '../lib/messages.mjs';
 
 // 设置写入走 DSH_HOME，测试必须隔离到临时目录，避免污染真实配置。
@@ -349,6 +350,8 @@ check('状态接口返回结构', status.status === 200
   && status.json.effective?.provider === 'auto'
   && status.json.effective?.enabled === true, JSON.stringify(status.json.effective ?? status.json));
 check('多行建议默认开启', status.json.effective?.multilineSuggestions === true, String(status.json.effective?.multilineSuggestions));
+check('极简显示默认关闭', status.json.defaults?.minimalDisplay === false
+  && status.json.effective?.minimalDisplay === false, String(status.json.effective?.minimalDisplay));
 check('切换建议默认开启且上限 3',
   status.json.effective?.switchEnabled === true && status.json.effective?.switchLimit === 3,
   JSON.stringify({ enabled: status.json.effective?.switchEnabled, limit: status.json.effective?.switchLimit }));
@@ -359,6 +362,30 @@ check('切换开关与上限可保存',
 const swBad = await request('/dsh-prompt-predict/settings', 'POST', { switchLimit: 11 });
 check('切换上限越界被拒', swBad.json.ok === false && /0–10|0-10/.test(String(swBad.json.reason)), String(swBad.json.reason));
 await request('/dsh-prompt-predict/settings', 'POST', { switchEnabled: true, switchLimit: 3 });
+
+const legacyDisplay = await request('/dsh-prompt-predict/status');
+check('旧设置缺少极简显示字段时默认关闭', legacyDisplay.json.saved?.switchLimit === 3
+  && !Object.hasOwn(legacyDisplay.json.saved ?? {}, 'minimalDisplay')
+  && legacyDisplay.json.effective?.minimalDisplay === false, JSON.stringify(legacyDisplay.json.saved));
+const invalidDisplay = await request('/dsh-prompt-predict/settings', 'POST', { minimalDisplay: 'true' });
+check('极简显示不保存非布尔输入', invalidDisplay.json.ok === true
+  && !Object.hasOwn(invalidDisplay.json.saved ?? {}, 'minimalDisplay')
+  && invalidDisplay.json.effective?.minimalDisplay === false, JSON.stringify(invalidDisplay.json.saved));
+writeSettings({ minimalDisplay: 'true' });
+const malformedDisplay = await request('/dsh-prompt-predict/status');
+check('存量极简显示值不是布尔时回退到关闭', malformedDisplay.json.effective?.minimalDisplay === false,
+  String(malformedDisplay.json.effective?.minimalDisplay));
+const displayOff = await request('/dsh-prompt-predict/settings', 'POST', { minimalDisplay: false });
+check('极简显示可显式保存 false', displayOff.json.ok === true
+  && displayOff.json.saved?.minimalDisplay === false && displayOff.json.effective?.minimalDisplay === false,
+  String(displayOff.json.saved?.minimalDisplay));
+const displayOn = await request('/dsh-prompt-predict/settings', 'POST', { minimalDisplay: true });
+const displayStatus = await request('/dsh-prompt-predict/status');
+check('极简显示可保存 true 并从状态读回', displayOn.json.ok === true
+  && displayOn.json.saved?.minimalDisplay === true && displayOn.json.effective?.minimalDisplay === true
+  && displayStatus.json.saved?.minimalDisplay === true && displayStatus.json.effective?.minimalDisplay === true,
+  String(displayStatus.json.saved?.minimalDisplay));
+
 const suggestion = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-test' });
 const missing = await request('/dsh-prompt-predict/suggest', 'POST', { sessionId: 'session-does-not-exist' });
 check('未知会话返回 session_not_found 代码',
@@ -589,6 +616,8 @@ const reset = await request('/dsh-prompt-predict/settings', 'POST', { reset: tru
 check('恢复默认清空保存项', reset.json.ok === true && Object.keys(reset.json.saved ?? {}).length === 0
   && reset.json.effective.provider === 'auto' && reset.json.effective.model === 'auto'
   && reset.json.effective.enabled === true, JSON.stringify(reset.json.effective));
+check('恢复默认后关闭极简显示', reset.json.ok === true && reset.json.effective?.minimalDisplay === false,
+  String(reset.json.effective?.minimalDisplay));
 
 // ================= 会话模型 / 新设置项 / 降级重试 / 去重 / reroll =================
 

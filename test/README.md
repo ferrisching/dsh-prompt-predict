@@ -6,7 +6,7 @@ profile and a browser.
 
 | Command | Scope | Current count |
 |---|---|---|
-| `npm test` | Host logic + client rendering | 141 host + 225 client |
+| `npm test` | Host logic + client rendering | 148 host + 247 client |
 | `npm run test:smoke` | Real DSH via disposable profile, mock LLM and headless Edge/CDP | 18 checks |
 | `npm run test:sidebar` | Opt-in probe: real DSH + `dsh-better-sidebar`, prints sidebar DOM | diagnostic, no ghost assertion |
 
@@ -26,7 +26,8 @@ diagnostics, empty-result retry, dedup and bilingual errors.
 `test/client-render.mjs` renders the plugin with a small React stand-in. It
 covers ghost rendering, Tab focus contexts, session switching, width/geometry
 clamping, insertion fallbacks, paste/attachments, IME composition, history,
-settings and both locales.
+settings and both locales. Minimal display cases cover the default and save flow,
+desktop and touch controls, and preserved shortcuts and status notices.
 
 ## Real DSH smoke
 

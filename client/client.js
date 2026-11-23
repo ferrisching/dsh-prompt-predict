@@ -33,8 +33,10 @@ window.__ModuleLoader__.load({
         "settings.desc": "助手回复结束后，在输入框里直接给出灰色建议（Tab 采纳、Esc 忽略、开始输入自动消失）。",
         "settings.saveHint": "注意：所有设置修改后都需要点击「保存」才会生效。",
         "settings.enable": "启用联想",
+        "settings.minimalDisplay": "极简显示",
+        "settings.minimalDisplayHint": "隐藏桌面灰字旁的按键提示和按钮；快捷键和触屏按钮照常可用",
         "settings.on": "已开启",
-        "settings.shortcutHint": "快捷键：Ctrl/⌘+Shift+Space 手动触发；Tab 采纳，↓ 重新生成，Esc 忽略",
+        "settings.shortcutHint": "快捷键：Ctrl/⌘+Shift+Space 手动触发；Tab 采纳，↑ 回看，↓ 下一条，Esc 忽略",
         "settings.off": "已关闭",
         "settings.provider": "提供商",
         "settings.refreshModels": "刷新",
@@ -175,8 +177,10 @@ window.__ModuleLoader__.load({
         "settings.desc": "Shows a gray suggestion in the composer right after each reply (Tab to accept, Esc to dismiss, start typing and it goes away).",
         "settings.saveHint": "Note: all settings take effect only after you click Save.",
         "settings.enable": "Enable predictions",
+        "settings.minimalDisplay": "Minimal display",
+        "settings.minimalDisplayHint": "Hides the hints and buttons next to desktop suggestions. Shortcuts and touch controls still work.",
         "settings.on": "On",
-        "settings.shortcutHint": "Shortcuts: Ctrl/⌘+Shift+Space to trigger; Tab accepts, ↓ regenerates, Esc dismisses",
+        "settings.shortcutHint": "Shortcuts: Ctrl/⌘+Shift+Space to trigger; Tab accepts, ↑ goes back, ↓ goes to the next suggestion, Esc dismisses",
         "settings.off": "Off",
         "settings.provider": "Provider",
         "settings.refreshModels": "Refresh",
@@ -1282,6 +1286,25 @@ window.__ModuleLoader__.load({
       var ghostRef = useRef(null);
       var _shift = useState({ x: 0, y: 0 }), shift = _shift[0], setShift = _shift[1];
       var _wp = useState(0), widthPx = _wp[0], setWidthPx = _wp[1];
+      var minimalDisplay = props.minimalDisplay === true;
+      var _dp = useState(false), desktopPointer = _dp[0], setDesktopPointer = _dp[1];
+      var showControls = !minimalDisplay || !desktopPointer;
+
+      // 混合设备即使以鼠标为主指针，也要为触屏保留可点按的按钮。
+      useLayoutEffect(function () {
+        if (!minimalDisplay || typeof window.matchMedia !== "function") return;
+        var media = window.matchMedia("(hover: hover) and (pointer: fine) and (not (any-pointer: coarse))");
+        var update = function () { setDesktopPointer(media.matches === true); };
+        update();
+        if (typeof media.addEventListener === "function") {
+          media.addEventListener("change", update);
+          return function () { media.removeEventListener("change", update); };
+        }
+        if (typeof media.addListener === "function") {
+          media.addListener(update);
+          return function () { media.removeListener(update); };
+        }
+      }, [minimalDisplay]);
 
       // 渲染后按「实际视口位置 vs 期望位置」自校正：无论祖先是否有 transform、
       // 嵌套了几个包含块，都能把 ghost 拉回编辑器坐标。
@@ -1501,10 +1524,10 @@ window.__ModuleLoader__.load({
           "data-prompt-predict-text": "true",
           style: { color: token("label-tertiary", colors().ghostText) },
         }, suggestion),
-        busy ? null : h("span", {
+        busy || (!showControls && !notice && !truncated) ? null : h("span", {
           style: { display: "inline-flex", alignItems: "center", gap: 6, marginInlineStart: 8, whiteSpace: "nowrap", verticalAlign: "middle" },
         },
-          h("button", {
+          showControls ? h("button", {
             type: "button", onClick: onAccept,
             title: tt(t, "ghost.acceptHint"), "aria-label": tt(t, "ghost.acceptHint"),
             style: {
@@ -1512,15 +1535,15 @@ window.__ModuleLoader__.load({
               border: "1px solid " + token("border-l1", colors().border), background: token("bg-layer-2", colors().softBg),
               color: token("label-secondary", colors().chipText), fontSize: 11, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", cursor: "pointer",
             },
-          }, "Tab"),
-          canPrev
+          }, "Tab") : null,
+          showControls && canPrev
             ? h("span", {
               "data-prompt-predict-prev-hint": "true",
               title: tt(t, "ghost.prevHint"),
               style: { color: token("label-tertiary", colors().ghostHint), fontSize: 11, whiteSpace: "nowrap" },
             }, tt(t, "ghost.prevHint"))
             : null,
-          nextAction === "next" || nextAction === "regen"
+          showControls && (nextAction === "next" || nextAction === "regen")
             ? h("span", {
               "data-prompt-predict-replace-hint": "true",
               title: tt(t, nextAction === "next" ? "ghost.nextHint" : "ghost.regenHint"),
@@ -1533,7 +1556,7 @@ window.__ModuleLoader__.load({
               style: { color: token("label-tertiary", colors().ghostHint), fontSize: 10, whiteSpace: "nowrap" },
             }, notice)
             : null,
-          onReroll
+          showControls && onReroll
             ? h("button", {
               type: "button", onClick: onReroll, title: tt(t, "ghost.reroll"), "aria-label": tt(t, "ghost.reroll"),
               style: {
@@ -1543,7 +1566,7 @@ window.__ModuleLoader__.load({
               },
             }, "↻")
             : null,
-          h("span", { style: { color: token("label-tertiary", colors().ghostHint), fontSize: 11, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")),
+          showControls ? h("span", { style: { color: token("label-tertiary", colors().ghostHint), fontSize: 11, whiteSpace: "nowrap" } }, tt(t, "ghost.dismiss")) : null,
           truncated
             ? h("span", {
               // 覆盖层整体 pointer-events:none：这里单独放开，悬停时把设置路径直接展开在文字里
@@ -1701,6 +1724,7 @@ window.__ModuleLoader__.load({
       var _me = useState(""), manualError = _me[0], setManualError = _me[1];   // 手动换一条失败的原因
       var _mk = useState("failed"), manualErrorKind = _mk[0], setManualErrorKind = _mk[1];
       var _en = useState(true), enabled = _en[0], setEnabled = _en[1];
+      var _min = useState(false), minimalDisplay = _min[0], setMinimalDisplay = _min[1];
       var _swi = useState(true), switchEnabled = _swi[0], setSwitchEnabled = _swi[1];
       var switchLimitRef = useRef(3);
       var suggestionHistoryRef = useRef([]);
@@ -1870,6 +1894,7 @@ window.__ModuleLoader__.load({
       useEffect(function () {
         api("status").then(function (j) {
           setEnabled(!(j && j.effective && j.effective.enabled === false));
+          setMinimalDisplay(j?.effective?.minimalDisplay === true);
           setSwitchEnabled(!(j && j.effective && j.effective.switchEnabled === false));
           switchLimitRef.current = Math.min(10, Math.max(0, Math.floor(Number(j && j.effective && j.effective.switchLimit) || 0)));
           if (j && j.effective && typeof j.effective.historySize === "number") {
@@ -1882,6 +1907,7 @@ window.__ModuleLoader__.load({
         var changed = function (event) {
           var on = event.detail?.enabled !== false;
           setEnabled(on);
+          if (typeof event.detail?.minimalDisplay === "boolean") setMinimalDisplay(event.detail.minimalDisplay);
           if (event.detail && typeof event.detail.switchEnabled === "boolean") setSwitchEnabled(event.detail.switchEnabled);
           if (event.detail && typeof event.detail.switchLimit === "number") {
             switchLimitRef.current = Math.min(10, Math.max(0, Math.floor(event.detail.switchLimit)));
@@ -2485,6 +2511,7 @@ window.__ModuleLoader__.load({
           onAccept: accept,
           onReroll: switchEnabled ? reroll : null,
           switchEnabled: switchEnabled,
+          minimalDisplay: minimalDisplay,
           canPrev: canPrev,
           nextAction: nextAction,
           notice: switchNotice,
@@ -2540,6 +2567,7 @@ window.__ModuleLoader__.load({
       var _mc = useState(6000), maxChars = _mc[0], setMaxChars = _mc[1];
       var _mt = useState(120), outputChars = _mt[0], setOutputChars = _mt[1];
       var _ml = useState(true), multiline = _ml[0], setMultiline = _ml[1];   // 多行建议开关
+      var _min = useState(false), minimalDisplay = _min[0], setMinimalDisplay = _min[1];
       var _sw = useState(true), switchEnabled = _sw[0], setSwitchEnabled = _sw[1];   // 是否允许切换建议
       var _slim = useState(3), switchLimit = _slim[0], setSwitchLimit = _slim[1];   // 最大切换次数
       var _hs = useState(10), historySize = _hs[0], setHistorySize = _hs[1];
@@ -2671,6 +2699,7 @@ window.__ModuleLoader__.load({
           setMaxChars(eff.maxChars || 6000);
           setOutputChars(eff.outputChars || 120);
           setMultiline(eff.multilineSuggestions !== false);
+          setMinimalDisplay(eff.minimalDisplay === true);
           setSwitchEnabled(eff.switchEnabled !== false);
           setSwitchLimit(typeof eff.switchLimit === "number" ? eff.switchLimit : 3);
           setHistorySize(typeof eff.historySize === "number" ? eff.historySize : 10);
@@ -2745,8 +2774,8 @@ window.__ModuleLoader__.load({
       }
 
       function save() {
-        setBusy(true); setMsg(null);
-        api("settings", {
+        // 只改显示偏好时，不重新提交或校验原先选择的模型和思考档位。
+        var patch = dirty ? {
           provider: provider, model: model,
           timeoutMs: timeoutSec * 1000,
           maxMessages: ctxSize,
@@ -2758,9 +2787,21 @@ window.__ModuleLoader__.load({
           historySize: historySize,
           suggestionLanguage: suggestionLanguage,
           reasoningEffort: effort,
-        }).then(function (j) {
-          if (j && j.ok) { trimHistoryToLimit(historySize); notifySettings(j.effective); setMsg({ ok: true, text: tt(t, "settings.saved") }); setDirty(false); loadAll(); }
-          else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
+        } : {};
+        if (minimalDisplayChanged) patch.minimalDisplay = minimalDisplay;
+        setBusy(true); setMsg(null);
+        api("settings", patch).then(function (j) {
+          if (j && j.ok) {
+            if (dirty) trimHistoryToLimit(historySize);
+            if (j.effective) {
+              setSt(Object.assign({}, st, { effective: j.effective }));
+              setMinimalDisplay(j.effective.minimalDisplay === true);
+            }
+            notifySettings(j.effective);
+            setMsg({ ok: true, text: tt(t, "settings.saved") });
+            setDirty(false);
+            loadAll();
+          } else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
         }).catch(function (e) { setMsg({ ok: false, text: String(e) }); })
           .finally(function () { setBusy(false); });
       }
@@ -2812,6 +2853,9 @@ window.__ModuleLoader__.load({
       if (!st) return h("div", { style: SS.card, dir: "auto" }, h("p", { style: SS.muted }, tt(t, "settings.loading")));
       var eff = st.effective || {};
       var enabled = eff.enabled !== false;
+      var minimalDisplayChanged = minimalDisplay !== (eff.minimalDisplay === true);
+      var minimalDisplayHintId = "dsh-prompt-predict-minimal-display-hint";
+      var saveDisabled = busy || (!dirty && !minimalDisplayChanged);
 
       return h("div", { style: SS.card, dir: "auto" },
         h("p", { style: SS.title },
@@ -2871,6 +2915,15 @@ window.__ModuleLoader__.load({
             h("span", { style: SS.toggleThumb(enabled) })),
           h("span", { style: SS.muted }, enabled ? tt(t, "settings.on") : tt(t, "settings.off"))),
         h("p", { style: SS.muted }, tt(t, "settings.shortcutHint")),
+        h("div", { style: SS.row },
+          h("span", { style: SS.label }, tt(t, "settings.minimalDisplay")),
+          h("button", {
+            type: "button", style: dim(SS.toggleTrack(minimalDisplay), !enabled || busy), disabled: !enabled || busy,
+            "data-prompt-predict-minimal-display": "true", "aria-pressed": minimalDisplay,
+            "aria-label": tt(t, "settings.minimalDisplay"), "aria-describedby": minimalDisplayHintId,
+            onClick: function () { setMinimalDisplay(!minimalDisplay); },
+          }, h("span", { style: SS.toggleThumb(minimalDisplay) })),
+          h("span", { id: minimalDisplayHintId, style: SS.hintInline }, tt(t, "settings.minimalDisplayHint"))),
 
         h("div", { style: SS.divider }),
 
@@ -3139,7 +3192,7 @@ window.__ModuleLoader__.load({
             })()),
 
         h("div", { style: { display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 } },
-          h("button", { style: dim(SS.btnPrimary, busy || !dirty), onClick: save, disabled: busy || !dirty }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
+          h("button", { style: dim(SS.btnPrimary, saveDisabled), onClick: save, disabled: saveDisabled }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
           h("button", { style: dim(SS.btnGhost, busy), onClick: resetDefaults, disabled: busy }, tt(t, "settings.reset")),
           h("button", {
             style: dim(SS.btnGhost, busy), disabled: busy, "data-prompt-predict-try": "true",
@@ -3151,7 +3204,8 @@ window.__ModuleLoader__.load({
             tryResult.truncated ? h("span", { style: SS.warnInline }, tt(t, "ghost.truncated")) : null,
             h("span", { style: SS.tryMeta }, tryResult.meta))
           : null,
-        msg ? h("p", { style: msg.ok ? SS.ok : SS.err }, msg.text) : null);
+        h("div", { "aria-live": "polite", "aria-atomic": "true" },
+          msg ? h("p", { style: msg.ok ? SS.ok : SS.err }, msg.text) : null));
     }
 
     function apply(ctx) {
