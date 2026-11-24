@@ -6,14 +6,16 @@ profile and a browser.
 
 | Command | Scope | Current count |
 |---|---|---|
-| `npm test` | Host logic + client rendering | 151 host + 247 client |
-| `npm run test:smoke` | Real DSH via disposable profile, mock LLM and headless Edge/CDP | 18 checks |
+| `npm test` | Host logic + client rendering | 185 host + 261 client |
+| `npm run test:smoke` | Real DSH via disposable profile, mock LLM and headless Edge/CDP | 23 checks on 0.2.2-rc.5 |
 | `npm run test:sidebar` | Opt-in probe: real DSH + `dsh-better-sidebar`, prints sidebar DOM | diagnostic, no ghost assertion |
 
 ## Verification history
 
 | Date | Plugin | DSH | Real-DSH smoke |
 |---|---|---|---|
+| 2026-11-24 | pending-restore branch (based on 0.2.22) | 0.2.2-rc.5 (Windows, headless Edge) | 23/23 pass, including same-round restore and suppression |
+| 2026-11-24 | 0.2.23 | 0.2.2-rc.5 (desktop nightly) | 23/23 pass |
 | 2026-11-23 | 0.2.22 | 0.2.2-rc.5 (desktop nightly) | 19/19 pass |
 | 2026-11-13 | 0.2.21 | 0.2.2-rc.2 (desktop nightly) | 19/19 pass |
 
@@ -22,13 +24,18 @@ profile and a browser.
 `test/predict.mjs` covers message trimming, suggestion normalization,
 language detection (including DSH-injected user-role messages), route
 registration, settings validation, streaming/JSON fallback, failure
-diagnostics, empty-result retry, dedup and bilingual errors.
+diagnostics, empty-result retry, dedup and bilingual errors. Pending suggestion
+cases recreate the Host with a temporary profile and a mocked read-only session
+service. They check zero model calls on cache hits, round invalidation,
+consumption, two same-round requests completing out of order (only the newer result survives in memory and on disk), and memory-only behavior with history off.
 
 `test/client-render.mjs` renders the plugin with a small React stand-in. It
 covers ghost rendering, Tab focus contexts, session switching, width/geometry
 clamping, insertion fallbacks, paste/attachments, IME composition, history,
-settings and both locales. Minimal display cases cover the default and save flow,
-desktop and touch controls, and preserved shortcuts and status notices.
+settings and both locales. Restoration cases cover switching back and remounting,
+read-only rerolls, draft visibility, consuming the shown round, and late results
+across sessions. Minimal display cases cover the default and save flow, desktop
+and touch controls, and preserved shortcuts and status notices.
 
 ## Real DSH smoke
 
@@ -50,7 +57,9 @@ Environment overrides:
 Covered checks include:
 
 - a real reply produces a ghost;
+- an unhandled suggestion survives page reload verbatim, with a confirmed cache hit and no extra prediction call;
 - Tab is ignored while another input is focused, accepted inside the composer;
+- after Tab or Esc, a reload with an empty composer gets a same-round suppression response, shows no ghost and makes no prediction call; sending a new message starts automatic predictions again;
 - reroll, ↓ and ↑ switching, pause/resume;
 - multi-line code suggestions and Tab insertion;
 - a geometry matrix with composer widths 260/220/180/600 px, ancestor scales

@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 [中文](CHANGELOG_zh.md)
 
+## [0.2.23] — 2026-11-24
+
+### Added
+
+- **Restore pending suggestions.** Switching sessions or reopening DSH can restore the selected suggestion for the same conversation round without another model call. After `Tab` accepts or `Esc` dismisses a suggestion, reloading and clearing the composer will not trigger another automatic prediction. Automatic suggestions resume when the conversation advances. With history turned off, pending suggestions stay in memory only.
+
+### Changed
+
+- **Suggestions follow the user's intent and voice (#10).** The helper prompt now separates *what to say* (the nearest unresolved step, blocker or decision) from *how to say it* (phrasing mirrored only from the user's own recent messages). Assistant text is used for task state only, and pasted quotes, logs, code and metadata are explicitly excluded as style evidence.
+- **Settings apply on click.** Every control now saves the field it changes immediately; the Save button and the "changes take effect after saving" notice are gone. Each edit sends only its own field, so unrelated model/effort validation can no longer block a display toggle, and rapid edits are queued so a stale response cannot overwrite newer state.
+- **Compact settings layout.** The description and shortcut reference now share one line, enable/minimal display/pause sit at the top because they are used most often, the model and generation controls form one labelled group, numeric tuning moved into the collapsed Advanced section, the update notice collapsed to a one-line summary with an expand toggle, and the prediction history keeps one summary row above its list.
+
 ## [0.2.22] — 2026-11-23
 
 ### Added

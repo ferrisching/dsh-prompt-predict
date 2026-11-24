@@ -41,7 +41,6 @@
       var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
       var _msg = useState(null), msg = _msg[0], setMsg = _msg[1];
       var _adv = useState(false), adv = _adv[0], setAdv = _adv[1];
-      var _dirty = useState(false), dirty = _dirty[0], setDirty = _dirty[1];
       var _try = useState(null), tryResult = _try[0], setTryResult = _try[1];
       var _copied = useState(""), copiedKey = _copied[0], setCopiedKey = _copied[1];
       var _ik = useState(""), insertedKey = _ik[0], setInsertedKey = _ik[1];
@@ -50,6 +49,7 @@
       var _ver = useState(null), pluginVersion = _ver[0], setPluginVersion = _ver[1];
       var _upd = useState(""), updateState = _upd[0], setUpdateState = _upd[1];   // "" | "checking"
       var _updInfo = useState(null), updateInfo = _updInfo[0], setUpdateInfo = _updInfo[1];
+      var _updOpen = useState(false), updateOpen = _updOpen[0], setUpdateOpen = _updOpen[1];
       var _aue = useState(false), autoUpdateError = _aue[0], setAutoUpdateError = _aue[1];
       var _undo = useState(null), undoSnapshot = _undo[0], setUndoSnapshot = _undo[1];   // 清空后可撤销的快照
 
@@ -167,7 +167,6 @@
           var stored = trimHistoryToLimit(historyLimit);
           setHistory(stored);
           setEffort(eff.reasoningEffort || "off");
-          setDirty(false);
         }).catch(function () { });
         api("catalog").then(function (j) {
           if (j && j.ok) { setCat(j.groups || []); setCatalogError(""); }
@@ -231,45 +230,40 @@
         return g && Array.isArray(g.models) ? g.models : [];
       }
 
-      function save() {
-        // 只改显示偏好时，不重新提交或校验原先选择的模型和思考档位。
-        var patch = dirty ? {
-          provider: provider, model: model,
-          timeoutMs: timeoutSec * 1000,
-          maxMessages: ctxSize,
-          maxChars: maxChars,
-          outputChars: outputChars,
-          multilineSuggestions: multiline,
-          switchEnabled: switchEnabled,
-          switchLimit: switchLimit,
-          historySize: historySize,
-          suggestionLanguage: suggestionLanguage,
-          reasoningEffort: effort,
-        } : {};
-        if (minimalDisplayChanged) patch.minimalDisplay = minimalDisplay;
-        setBusy(true); setMsg(null);
-        api("settings", patch).then(function (j) {
-          if (j && j.ok) {
-            if (dirty) trimHistoryToLimit(historySize);
-            if (j.effective) {
-              setSt(Object.assign({}, st, { effective: j.effective }));
-              setMinimalDisplay(j.effective.minimalDisplay === true);
+      // 每次改动只提交变化的那几个字段：Host 的 /settings 是增量 patch，
+      // 提交整表单会连带重新校验用户根本没碰过的模型/档位。
+      var patchQueue = Promise.resolve();
+      function applyPatch(fields, opts) {
+        var options = opts || {};
+        var patch = {};
+        Object.keys(fields).forEach(function (key) { patch[key] = fields[key]; });
+        if (!Object.keys(patch).length) return Promise.resolve(true);
+        // 连续点击/拖数字时串行化：后一次基于前一次的结果，避免旧响应覆盖新状态。
+        var run = patchQueue.then(function () {
+          return api("settings", patch).then(function (j) {
+            if (j && j.ok) {
+              if (j.effective) setSt(Object.assign({}, st, { effective: j.effective }));
+              notifySettings(j.effective);
+              if (Object.prototype.hasOwnProperty.call(patch, "historySize")) trimHistoryToLimit(patch.historySize);
+              if (!options.quiet) setMsg({ ok: true, text: tt(t, "settings.saved") });
+              return true;
             }
-            notifySettings(j.effective);
-            setMsg({ ok: true, text: tt(t, "settings.saved") });
-            setDirty(false);
-            loadAll();
-          } else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
-        }).catch(function (e) { setMsg({ ok: false, text: String(e) }); })
-          .finally(function () { setBusy(false); });
+            setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
+            return false;
+          }).catch(function (e) {
+            setMsg({ ok: false, text: String(e) });
+            return false;
+          });
+        });
+        patchQueue = run.catch(function () { return false; });
+        return run;
       }
+
       function toggleEnabled(on) {
-        setBusy(true); setMsg(null);
-        api("settings", { enabled: on }).then(function (j) {
-          if (j && j.ok) { notifySettings(j.effective); setSt(Object.assign({}, st, { effective: j.effective })); loadAll(); setMsg({ ok: true, text: on ? tt(t, "settings.enabled") : tt(t, "settings.disabled") }); }
-          else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.actionFailed") });
-        }).catch(function (e) { setMsg({ ok: false, text: String(e) }); })
-          .finally(function () { setBusy(false); });
+        setMsg(null);
+        applyPatch({ enabled: on }).then(function (ok) {
+          if (ok) setMsg({ ok: true, text: on ? tt(t, "settings.enabled") : tt(t, "settings.disabled") });
+        });
       }
       // 「试一下」：直接打 /suggest，走的是和 composer 完全相同的链路（模型路由、语言、字数、
       // 截断重试都包含），所以能用来确认设置到底生效没有。
@@ -311,79 +305,103 @@
       if (!st) return h("div", { style: SS.card, dir: "auto" }, h("p", { style: SS.muted }, tt(t, "settings.loading")));
       var eff = st.effective || {};
       var enabled = eff.enabled !== false;
-      var minimalDisplayChanged = minimalDisplay !== (eff.minimalDisplay === true);
       var minimalDisplayHintId = "dsh-prompt-predict-minimal-display-hint";
-      var saveDisabled = busy || (!dirty && !minimalDisplayChanged);
+      var historyCount = history.length;
 
       return h("div", { style: SS.card, dir: "auto" },
-        h("p", { style: SS.title },
-          tt(t, "settings.title"),
+        // 标题行：名称 + 版本 + 检查更新（更新信息默认收成一行摘要）
+        h("div", { style: { display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: 8 } },
+          h("span", { style: SS.title }, tt(t, "settings.title")),
           pluginVersion
             ? h("span", { style: SS.version, "data-prompt-predict-version": "true" }, "v" + pluginVersion)
             : null,
           h("button", {
             type: "button",
-            style: Object.assign({}, SS.linkBtn, { marginInlineStart: 8 }),
+            style: SS.linkBtn,
             "data-prompt-predict-update-check": "true",
-            disabled: updateState === "checking" || busy || !pluginVersion,   // 版本号未加载前禁用，避免误报
+            disabled: updateState === "checking" || busy || !pluginVersion,
             onClick: checkUpdate,
           }, updateState === "checking" ? tt(t, "settings.updateChecking") : tt(t, "settings.checkUpdate"))),
+        // 说明与快捷键压成一行；点任一设置即时生效，不再需要底部保存按钮
+        h("p", { style: SS.subline, "data-prompt-predict-shortcuts": "true" }, tt(t, "settings.shortcutsLine")),
+
         autoUpdateError && !updateInfo
           ? h("p", { style: SS.muted, "data-prompt-predict-update-auto-error": "true" }, tt(t, "settings.updateAutoFailed"))
           : null,
         updateInfo
-          ? h("p", { style: SS.muted, "data-prompt-predict-update-info": "true" },
+          ? h("div", { "data-prompt-predict-update-info": "true", style: SS.summaryRow },
             updateInfo.status === "found"
-              ? h("span", null,
-                h("span", null, tt(t, "settings.updateFound", { version: updateInfo.version })),
-                pluginPageOpener
-                  ? h("button", {
-                    type: "button",
-                    style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6, fontWeight: 600 }),
-                    "data-prompt-predict-open-plugins": "true",
-                    onClick: pluginPageOpener,
-                  }, tt(t, "settings.updateOpenPlugins"))
-                  : null,
-                h("button", {
-                  type: "button",
-                  style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
-                  "data-prompt-predict-update-copy": "true",
-                  onClick: function () { copySuggestion("update-cmd", "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version); },
-                }, copiedKey === "update-cmd" ? tt(t, "settings.updateCopied") : tt(t, "settings.updateCopy")),
-                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updatePluginsHint")),
-                h("span", { style: { display: "block" } },
-                  tt(t, "settings.updateCommand", { command: "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version })),
-                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updateStep1")),
-                h("span", { style: { display: "block", fontSize: 12 } }, tt(t, "settings.updateStep2")),
-                h("span", { style: { display: "block", fontSize: 12 } }, tt(t, "settings.updateStep3")),
-                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updateOtherEnv")))
-              : updateInfo.status === "latest"
-                ? tt(t, "settings.updateLatest")
-                : tt(t, "settings.updateError"))
+              ? h("span", { style: SS.summaryText },
+                // 摘要一行常显；命令与按钮只在展开后追加
+                (function () {
+                  var kids = [h("span", { key: "sum" }, tt(t, "settings.updateSummary", { version: updateInfo.version }))];
+                  if (!updateOpen) return kids;
+                  kids.push(h("span", { key: "cmd", style: { display: "block", fontSize: 11.5, marginTop: 2 } },
+                    tt(t, "settings.updateCommand", { command: "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version })));
+                  if (pluginPageOpener) {
+                    kids.push(h("button", {
+                      key: "open", type: "button",
+                      style: Object.assign({}, SS.linkBtn, { marginInlineStart: 0 }),
+                      "data-prompt-predict-open-plugins": "true",
+                      onClick: pluginPageOpener,
+                    }, tt(t, "settings.updateOpenPlugins")));
+                  }
+                  kids.push(h("span", { key: "s1", style: { display: "block", fontSize: 11.5, marginTop: 2 } }, tt(t, "settings.updateStep1")));
+                  kids.push(h("span", { key: "s2", style: { display: "block", fontSize: 11.5 } }, tt(t, "settings.updateStep2")));
+                  kids.push(h("span", { key: "s3", style: { display: "block", fontSize: 11.5 } }, tt(t, "settings.updateStep3")));
+                  kids.push(h("span", { key: "s4", style: { display: "block", fontSize: 11.5, marginTop: 2 } }, tt(t, "settings.updateOtherEnv")));
+                  kids.push(h("button", {
+                    key: "copy", type: "button",
+                    style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
+                    "data-prompt-predict-update-copy": "true",
+                    onClick: function () { copySuggestion("update-cmd", "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version); },
+                  }, copiedKey === "update-cmd" ? tt(t, "settings.updateCopied") : tt(t, "settings.updateCopy")));
+                  return kids;
+                })())
+              : h("span", { style: SS.summaryText },
+                updateInfo.status === "latest" ? tt(t, "settings.updateLatest") : tt(t, "settings.updateError")),
+            updateInfo.status === "found"
+              ? h("button", {
+                type: "button", style: SS.histToggle, "data-prompt-predict-update-toggle": "true",
+                "aria-expanded": updateOpen,
+                onClick: function () { setUpdateOpen(!updateOpen); },
+              }, (updateOpen ? "▾ " : "▸ ") + tt(t, updateOpen ? "settings.historyCollapse" : "settings.historyExpand"))
+              : null)
           : null,
-        h("p", { style: SS.muted }, tt(t, "settings.desc")),
-        h("p", {
-          style: Object.assign({}, SS.muted, { fontWeight: 600 }),
-          "data-prompt-predict-save-hint": "true",
-        }, tt(t, "settings.saveHint")),
 
+        // ===== 状态与动作：最常用，放最上面 =====
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.enable")),
           h("button", { type: "button", style: SS.toggleTrack(enabled), onClick: function () { toggleEnabled(!enabled); }, disabled: busy, "aria-pressed": enabled },
             h("span", { style: SS.toggleThumb(enabled) })),
           h("span", { style: SS.muted }, enabled ? tt(t, "settings.on") : tt(t, "settings.off"))),
-        h("p", { style: SS.muted }, tt(t, "settings.shortcutHint")),
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.minimalDisplay")),
           h("button", {
             type: "button", style: dim(SS.toggleTrack(minimalDisplay), !enabled || busy), disabled: !enabled || busy,
             "data-prompt-predict-minimal-display": "true", "aria-pressed": minimalDisplay,
             "aria-label": tt(t, "settings.minimalDisplay"), "aria-describedby": minimalDisplayHintId,
-            onClick: function () { setMinimalDisplay(!minimalDisplay); },
+            onClick: function () { var v = !minimalDisplay; setMinimalDisplay(v); applyPatch({ minimalDisplay: v }); },
           }, h("span", { style: SS.toggleThumb(minimalDisplay) })),
           h("span", { id: minimalDisplayHintId, style: SS.hintInline }, tt(t, "settings.minimalDisplayHint"))),
+        h("div", { style: SS.row },
+          h("span", { style: SS.label }, tt(t, "settings.pause")),
+          h("button", {
+            type: "button", style: dim(Object.assign({}, SS.btnGhost, { whiteSpace: "nowrap" }), busy), disabled: busy,
+            "data-prompt-predict-pause": "true", "aria-pressed": Boolean(pauseState),
+            onClick: togglePause,
+          }, pauseState
+            ? tt(t, "settings.pauseResume")
+            : tt(t, "settings.pauseStart", { minutes: 10 })),
+          h(InfoHint, {
+            text: pauseState
+              ? tt(t, "settings.pauseLeft", { time: formatLeft(pauseState - Date.now()) })
+              : tt(t, "settings.pauseHint", { minutes: 10 }),
+            full: tt(t, "settings.pauseHintFull"),
+          })),
 
-        h("div", { style: SS.divider }),
+        // ===== 模型与生成 =====
+        h("div", { style: SS.sectionHead }, h("span", { style: SS.sectionLabel }, tt(t, "settings.predictionSection"))),
 
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.provider")),
@@ -394,7 +412,8 @@
               setProvider(p);
               if (p === "auto") { setModel("auto"); }
               else { var ms = modelsOf(p); setModel(ms.length ? ms[0].id : ""); }
-              setEffort("auto"); setDirty(true);
+              setEffort("auto");
+              applyPatch({ provider: p, model: p === "auto" ? "auto" : (modelsOf(p).length ? modelsOf(p)[0].id : ""), reasoningEffort: "auto" });
             },
           },
             h("option", { value: "auto" }, tt(t, "settings.followSession")),
@@ -411,7 +430,7 @@
           h("span", { style: SS.label }, tt(t, "settings.model")),
           h("select", {
             style: SS.select, value: model, disabled: !enabled || busy || provider === "auto", "aria-label": tt(t, "settings.model"),
-            onChange: function (e) { setModel(e.target.value); setEffort("auto"); setDirty(true); },
+            onChange: function (e) { setModel(e.target.value); setEffort("auto"); applyPatch({ model: e.target.value, reasoningEffort: "auto" }); },
           },
             provider === "auto"
               ? h("option", { value: "auto" }, tt(t, "settings.followSession"))
@@ -433,7 +452,6 @@
             : null;
         })(),
 
-        h("p", { style: SS.muted }, tt(t, "settings.predictionSection")),
         h("div", { style: SS.row },
         h("span", { style: SS.label }, tt(t, "settings.suggestionLanguage")),
         h("select", {
@@ -444,8 +462,9 @@
               if (next === MORE_LANGUAGES) { setLanguagesExpanded(true); return; }   // 只展开，不改选择
               var variants = familyVariants(next);
               var keep = variants.some(function (item) { return item[0] === suggestionLanguage; });
-              setSuggestionLanguage(variants.length > 1 ? (keep ? suggestionLanguage : variants[0][0]) : next);
-              setDirty(true);
+              var resolved = variants.length > 1 ? (keep ? suggestionLanguage : variants[0][0]) : next;
+              setSuggestionLanguage(resolved);
+              applyPatch({ suggestionLanguage: resolved });
             },
           },
             (function () {
@@ -476,23 +495,18 @@
               value: current, disabled: !enabled || busy,
               "data-prompt-predict-language-region": "true",
               title: tt(t, "settings.languageRegion"),
-              onChange: function (e) { setSuggestionLanguage(e.target.value); setDirty(true); },
+              onChange: function (e) { setSuggestionLanguage(e.target.value); applyPatch({ suggestionLanguage: e.target.value }); },
             }, variants.map(function (item) {
               return h("option", { key: item[0], value: item[0] }, regionLabel(item[0], languageFamily(suggestionLanguage), t));
             }));
           })(),
           h(InfoHint, { text: tt(t, "settings.suggestionLanguageHint"), full: tt(t, "settings.suggestionLanguageHintFull") })),
         h("div", { style: SS.row },
-          h("span", { style: SS.label }, tt(t, "settings.outputChars")),
-          h("input", { style: SS.input, type: "number", min: 20, max: 400, step: 10, value: outputChars, disabled: !enabled || busy, "data-prompt-predict-chars": "true", "aria-label": tt(t, "settings.outputChars"), onChange: function (e) { setOutputChars(Number(e.target.value)); setDirty(true); } }),
-          h(InfoHint, { text: tt(t, "settings.outputCharsHint") + wordHint(suggestionLanguage, outputChars, t), full: tt(t, "settings.outputCharsHintFull") })),
-
-        h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.multiline")),
           h("button", {
             type: "button", style: dim(SS.toggleTrack(multiline), !enabled || busy), disabled: !enabled || busy,
             "data-prompt-predict-multiline": "true", "aria-pressed": multiline,
-            onClick: function () { setMultiline(!multiline); setDirty(true); },
+            onClick: function () { var v = !multiline; setMultiline(v); applyPatch({ multilineSuggestions: v }); },
           }, h("span", { style: SS.toggleThumb(multiline) })),
           h("span", { style: SS.hintInline }, tt(t, "settings.multilineHint"))),
 
@@ -501,7 +515,7 @@
           h("button", {
             type: "button", style: dim(SS.toggleTrack(switchEnabled), !enabled || busy), disabled: !enabled || busy,
             "data-prompt-predict-switch": "true", "aria-pressed": switchEnabled,
-            onClick: function () { setSwitchEnabled(!switchEnabled); setDirty(true); },
+            onClick: function () { var v = !switchEnabled; setSwitchEnabled(v); applyPatch({ switchEnabled: v }); },
           }, h("span", { style: SS.toggleThumb(switchEnabled) })),
           h("span", { style: SS.hintInline }, tt(t, "settings.switchEnabledHint"))),
 
@@ -512,7 +526,7 @@
               style: SS.input, type: "number", min: 0, max: 10, step: 1, value: switchLimit,
               disabled: !enabled || busy,
               "data-prompt-predict-switch-limit": "true", "aria-label": tt(t, "settings.switchLimit"),
-              onChange: function (e) { setSwitchLimit(Number(e.target.value)); setDirty(true); },
+              onChange: function (e) { var v = Number(e.target.value); setSwitchLimit(v); applyPatch({ switchLimit: v }); },
             }),
             h("span", { style: SS.hintInline }, tt(t, "settings.switchLimitHint")))
           : null,
@@ -537,26 +551,31 @@
         adv ? h("div", null,
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.timeout")),
-            h("input", { style: SS.input, type: "number", min: 1, max: 60, value: timeoutSec, "aria-label": tt(t, "settings.timeout"), disabled: !enabled || busy, onChange: function (e) { setTimeoutSec(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 1, max: 60, value: timeoutSec, "aria-label": tt(t, "settings.timeout"), disabled: !enabled || busy, onChange: function (e) { var v = Number(e.target.value); setTimeoutSec(v); applyPatch({ timeoutMs: v * 1000 }); } }),
             h("span", { style: SS.muted }, tt(t, "settings.timeoutUnit"))),
           h("div", { style: SS.row },
+            h("span", { style: SS.label }, tt(t, "settings.outputChars")),
+            h("input", { style: SS.input, type: "number", min: 20, max: 400, step: 10, value: outputChars, disabled: !enabled || busy, "data-prompt-predict-chars": "true", "aria-label": tt(t, "settings.outputChars"), onChange: function (e) { var v = Number(e.target.value); setOutputChars(v); applyPatch({ outputChars: v }); } }),
+            h(InfoHint, { text: tt(t, "settings.outputCharsHint") + wordHint(suggestionLanguage, outputChars, t), full: tt(t, "settings.outputCharsHintFull") })),
+
+          h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.contextSize")),
-            h("select", { style: SS.select, value: ctxSize, disabled: !enabled || busy, "aria-label": tt(t, "settings.contextSize"), onChange: function (e) { setCtxSize(Number(e.target.value)); setDirty(true); } },
+            h("select", { style: SS.select, value: ctxSize, disabled: !enabled || busy, "aria-label": tt(t, "settings.contextSize"), onChange: function (e) { var v = Number(e.target.value); setCtxSize(v); applyPatch({ maxMessages: v }); } },
               h("option", { value: 3 }, tt(t, "settings.contextSmall")),
               h("option", { value: 8 }, tt(t, "settings.contextStandard")),
               h("option", { value: 12 }, tt(t, "settings.contextLarge"))),
             h("span", { style: SS.muted }, tt(t, "settings.contextHint"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.maxChars")),
-            h("input", { style: SS.input, type: "number", min: 1000, max: 20000, step: 500, value: maxChars, "aria-label": tt(t, "settings.maxChars"), disabled: !enabled || busy, onChange: function (e) { setMaxChars(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 1000, max: 20000, step: 500, value: maxChars, "aria-label": tt(t, "settings.maxChars"), disabled: !enabled || busy, onChange: function (e) { var v = Number(e.target.value); setMaxChars(v); applyPatch({ maxChars: v }); } }),
             h("span", { style: SS.muted }, tt(t, "settings.maxCharsHint"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.historySize")),
-            h("input", { style: SS.input, type: "number", min: 0, max: 50, step: 1, value: historySize, "aria-label": tt(t, "settings.historySize"), disabled: !enabled || busy, onChange: function (e) { setHistorySize(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 0, max: 50, step: 1, value: historySize, "aria-label": tt(t, "settings.historySize"), disabled: !enabled || busy, onChange: function (e) { var v = Number(e.target.value); setHistorySize(v); applyPatch({ historySize: v }); } }),
             h("span", { style: SS.muted }, tt(t, "settings.historySizeHint", { storage: tt(t, storagePlatformKey()) }))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.effort")),
-            h("select", { style: SS.select, value: effort, disabled: !enabled || busy, "aria-label": tt(t, "settings.effort"), onChange: function (e) { setEffort(e.target.value); setDirty(true); } },
+            h("select", { style: SS.select, value: effort, disabled: !enabled || busy, "aria-label": tt(t, "settings.effort"), onChange: function (e) { setEffort(e.target.value); applyPatch({ reasoningEffort: e.target.value }); } },
               h("option", { value: "auto" }, effortOptions.length === 0 ? tt(t, "settings.effortDefaultNoLevels") : tt(t, "settings.effortDefault")),
               (function () {
                 var ids = effortOptions.slice();
@@ -568,22 +587,23 @@
             h("span", { style: SS.muted }, effortSourceHint(st, t))) ) : null,
 
         h("div", { style: SS.divider }),
-        h("div", { style: SS.histHead },
-          h("span", { style: SS.sectionTitle, }, tt(t, "settings.historyTitle", { count: history.length, limit: historySize })),
-          history.length > 1
-            ? h("button", {
-              type: "button",
-              style: SS.histToggle,
-              "data-prompt-predict-history-toggle": "true",
-              onClick: function () { setListOpen(!listOpen); },
-            }, (listOpen ? "▾ " : "▸ ") + tt(t, listOpen ? "settings.historyCollapse" : "settings.historyExpand"))
-            : null,
+        // 最近预测默认收成一行：标题 + 条数 + 展开；展开后才出现清空与列表。
+        h("div", { style: SS.summaryRow, "data-prompt-predict-history-summary": "true" },
+          h("span", { style: SS.summaryText }, tt(t, "settings.historyTitle", { count: history.length, limit: historySize })),
+          h("button", {
+            type: "button",
+            style: SS.histToggle,
+            "data-prompt-predict-history-toggle": "true",
+            "aria-expanded": listOpen,
+            onClick: function () { setListOpen(!listOpen); },
+          }, (listOpen ? "▾ " : "▸ ") + tt(t, listOpen ? "settings.historyCollapse" : "settings.historyExpand")),
           history.length
             ? h("button", {
               type: "button", style: SS.histToggle, "data-prompt-predict-history-clear": "true",
               onClick: clearHistory,
             }, tt(t, "settings.historyClear"))
             : null),
+        h("div", null, 
         // 真被截断时不用展开「高级」就能看到：直接给可执行的建议
         run && run.truncated
           ? h("p", { style: SS.warnBlock }, tt(t, "settings.truncatedWarn"))
@@ -647,10 +667,9 @@
                         : null)
                     : null);
               });
-            })()),
+            })())),
 
         h("div", { style: { display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 } },
-          h("button", { style: dim(SS.btnPrimary, saveDisabled), onClick: save, disabled: saveDisabled }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
           h("button", { style: dim(SS.btnGhost, busy), onClick: resetDefaults, disabled: busy }, tt(t, "settings.reset")),
           h("button", {
             style: dim(SS.btnGhost, busy), disabled: busy, "data-prompt-predict-try": "true",

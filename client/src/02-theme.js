@@ -80,6 +80,15 @@
         ok: { color: token("state-success-primary", c.ok), fontSize: 12, marginTop: 8 },
         divider: { borderTop: "1px solid " + token("border-l1", c.divider), margin: "16px 0" },
         advBtn: { flex: "none", background: "none", border: 0, color: token("state-business-primary", c.link), fontSize: 13, cursor: "pointer", padding: 0 },
+        // 顶部压缩：说明与快捷键共用一行小字，省掉两块常驻段落。
+        subline: { color: token("label-tertiary", c.muted), fontSize: 12, lineHeight: 1.6, margin: "2px 0 0" },
+        // 未保存提示只在 dirty 时出现，替掉常驻的加粗说明。
+        dirtyBar: { margin: "10px 0 0", padding: "6px 10px", borderRadius: 8, fontSize: 12, lineHeight: 1.6, color: token("label-secondary", c.label), background: token("bg-layer-2", c.softBg) },
+        sectionHead: { display: "flex", alignItems: "baseline", gap: 8, margin: "20px 0 2px" },
+        sectionLabel: { fontSize: 12, fontWeight: 600, letterSpacing: ".02em", color: token("label-tertiary", c.muted), textTransform: "uppercase" },
+        summaryRow: { display: "flex", alignItems: "center", gap: 8, margin: "10px 0 0", padding: "7px 10px", borderRadius: 8, background: token("bg-layer-2", c.softBg), fontSize: 12.5, lineHeight: 1.6, color: token("label-primary", c.softText) },
+        summaryText: { flex: 1, minWidth: 0 },
+        countBadge: { flex: "none", color: token("label-tertiary", c.muted), fontSize: 11.5 },
       };
     }
     var SS = buildStyles();
@@ -100,14 +109,14 @@
     }
     function dim(style, busy) { return busy ? Object.assign({}, style, { opacity: .55, cursor: "not-allowed" }) : style; }
 
-    function api(path, body) {
+    function api(path, body, options) {
       var controller = new AbortController();
       var timer = setTimeout(function () { controller.abort(); }, 15000);
       var langHeader = { "x-dsh-locale": currentLang() };
       var opts = body === undefined
         ? { headers: langHeader }
         : { method: "POST", headers: Object.assign({ "content-type": "application/json" }, langHeader), body: JSON.stringify(body) };
-      return fetch("./dsh-prompt-predict/" + path, Object.assign({}, opts, { signal: controller.signal }))
+      return fetch("./dsh-prompt-predict/" + path, Object.assign(opts, options, { signal: controller.signal }))
         .then(function (r) { return r.json(); })
         .finally(function () { clearTimeout(timer); });
     }
@@ -229,6 +238,14 @@
           var x = Math.min(Math.max(r.left + r.width / 2, 0), (window.innerWidth || 1200) - 1);
           var y = Math.min(Math.max(r.top + Math.min(r.height / 2, 20), 0), (window.innerHeight || 800) - 1);
           var hit = document.elementFromPoint(x, y);
+          // A clickable ghost control can cover our sample point. Inspect the first
+          // underlying layer; a dialog or another pane must still block the editor.
+          if (hit && hit.closest && hit.closest('[data-prompt-predict-ghost]') && typeof document.elementsFromPoint === "function") {
+            hit = document.elementsFromPoint(x, y).find(function (node) {
+              return !(node.closest && node.closest('[data-prompt-predict-ghost]'));
+            });
+            if (!hit) return false;
+          }
           if (hit && hit !== el && !(el.contains && el.contains(hit)) && !(hit.contains && hit.contains(el))) return false;
         }
       } catch { return false; }
@@ -421,9 +438,18 @@
       return Boolean(editorText(sessionId));
     }
 
-    // Tab 采纳的放宽规则：ghost 可见时，除了其它文本输入/下拉框和对话框，
+    function isOtherSession(sessionId, node) {
+      try {
+        var scope = node && node.closest && node.closest('[data-conversation-session]');
+        var id = scope && scope.getAttribute && scope.getAttribute('data-conversation-session');
+        return Boolean(id && id !== sessionId);
+      } catch { return false; }
+    }
+
+    // Tab 采纳的放宽规则：ghost 可见时，除了其它会话、文本输入/下拉框和对话框，
     // 任何焦点位置都可以采纳；工具栏/消息操作按钮不再让 Tab 跑掉。
     function canAcceptTabEverywhere(sessionId, event) {
+      if (isOtherSession(sessionId, document.activeElement) || isOtherSession(sessionId, event && event.target)) return false;
       try {
         var ed = findEditor(sessionId);
         var inEditor = function (node) {
@@ -456,6 +482,7 @@
 
     // 快捷键只能在当前 composer 聚焦时接管；否则 Tab 应该正常用于焦点移动。
     function isComposerFocused(sessionId, event) {
+      if (isOtherSession(sessionId, document.activeElement) || isOtherSession(sessionId, event && event.target)) return false;
       try {
         var ed = findEditor(sessionId);
         if (!ed) return false;

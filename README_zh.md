@@ -49,7 +49,7 @@
 - **轻量上下文**：只取最近若干条 user/assistant 的纯文本，工具结果、附件、系统提示一律不进辅助调用
 - **默认跟随当前会话模型**：不写死任何提供商，联想调用沿用会话自身选用的模型；也可以在设置页固定到某个更便宜的模型
 - **不会复读、不会卡死**：连续两轮撞车时自动要求换一条；思考档位与真实模型不兼容时自动降级重试，不会出现「设置都对但永远没建议」
-- **全部可调**：开关、提供商 / 模型、响应超时、上下文规模与预算、输出上限、思考深度，保存后立即生效，无需重启 DSH
+- **全部可调**：开关、提供商 / 模型、响应超时、上下文规模与预算、输出上限、思考深度，改动后立即生效，无需重启 DSH
 - **浅色/深色自适应**：ghost、设置页与历史列表跟随系统/应用的配色（`prefers-color-scheme`），两种主题下都保持 WCAG AA 对比度
 - **界面跟随语言设置**：插件随 DSH 自身支持的界面语言提供词典（中文、英文），并把已有词典全部注册给 locale 服务。切换「设置 → 语言」后插件界面立刻跟着变——包括输入框上的 ghost 提示与**设置里的校验报错**（报错文案由 Host 生成，会按请求带来的语言返回），无需刷新；没有语言服务时回落中文
 - **零运行时依赖**：纯 ESM，Host 端与客户端都不引入第三方包
@@ -65,7 +65,7 @@
 **或者用 dsh CLI**——想装某个已发布版本就用 pnpm 的 `@版本` 语法：
 
 ```bash
-dsh plugin --profile desktop add dsh-prompt-predict@0.2.22
+dsh plugin --profile desktop add dsh-prompt-predict@0.2.23
 ```
 
 `--profile` 换成你自己的 profile（桌面端一般是 `desktop`，Web 端是 `web`），**装完重启 DSH 生效**。
@@ -91,8 +91,8 @@ dsh plugin --profile desktop add dsh-prompt-predict@latest
 **完全一致**的 tarball（`shasum` 与 registry 相同），适合离线机器或需要自行校验产物的场景：
 
 ```bash
-gh release download v0.2.22 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
-dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.22.tgz
+gh release download v0.2.23 --repo ferrisching/dsh-prompt-predict --pattern '*.tgz'
+dsh plugin --profile desktop add ./dsh-prompt-predict-0.2.23.tgz
 ```
 
 与上面 CLI 路径同样的注意点：请自己把 `"dsh-prompt-predict"` 加进 `dsh.profile.bundles`，
@@ -146,9 +146,11 @@ pnpm add /path/to/dsh-prompt-predict
 | `↓` | 生成下一条建议（计入「最大切换次数」）；本轮已有后续建议时则免费前进。没有建议且输入框为空时直接拉一条。纯 ↓ 被系统/输入法吞掉时可用 `Ctrl/⌘+↓` |
 | `↑` | 回到本轮的上一条建议（免费） |
 | `Ctrl/⌘+Shift+Space` | 手动触发一次预测；已有建议时等同换一条 |
-| 直接开始打字 | 建议消失；**把草稿删空它还会回来**（只有 `Esc` 是永久忽略） |
+| 直接开始打字 | 暂时隐藏建议；**把草稿删空，它还会回来** |
 
-建议只在输入框为空、且当前会话不在运行中时出现；切换会话、中断回复都会清掉旧建议。
+建议只在输入框为空、且当前会话没有运行时显示。切回会话或重开 DSH 后，如果仍是同一轮且有缓存，就恢复上次选中的那条，不再调用模型。`Tab` 采纳或 `Esc` 忽略后，同一轮不再自动恢复；仍可以手动请求。新回复、编辑或重试一旦改变会话上下文，就不会恢复旧建议。
+
+恢复时只保留选中的建议和已用切换次数，不恢复 `↑` / `↓` 的候选列表。仅以只读状态打开的旧会话可以恢复并采纳原句；继续对话后才可重新生成。
 
 ## ⚙️ 设置
 
@@ -173,9 +175,10 @@ pnpm add /path/to/dsh-prompt-predict
 
 设置页底部是**最近预测**列表（默认 10 条，可调）：时间、**哪个会话**、所用模型、耗时，以及是否自动降级了思考档位 / 换过一条 / 被输出上限截断，失败时直接显示原因；列表默认只显示最新一条（`▸ 展开全部` 看其余），最新一条原文默认展开，点其它行的 `▸` 会展开它并自动收起上一条；记录存在应用自身的 `localStorage`（桌面端是 Electron 渲染层，Web 端是页面存储），不会上传——联想出问题时不必靠猜。
 
-- 点击「保存」后**立即生效**，无需重启 DSH
+- 每个控件改完**立即生效**——没有「保存」按钮，也无需重启 DSH
 - 设置落盘在 `~/.dsh/dsh-prompt-predict/config.json`（权限 600）
 - 优先级：**用户保存的设置 > cordis patch 部署默认 > 内置默认**
+- 待用建议和「最近预测」是两份数据。Host 在当前 DSH profile 下的 `dsh-prompt-predict/pending.json` 为每个会话保留一条选中的建议（或已采纳/忽略标记）、轮次和切换次数，最多 256 个会话。该文件不支持多个 Host 进程并发写入同一 profile。缓存不保存对话原文、草稿或其它候选，也不会上传。把**记录条数**设为 `0` 会清除当前 profile 的磁盘缓存，只能在同一个 Host 进程内恢复；重新开启历史也不会补存关闭期间生成的建议。
 
 ## 🔌 HTTP 接口
 
@@ -187,7 +190,9 @@ pnpm add /path/to/dsh-prompt-predict
 | GET | `/dsh-prompt-predict/catalog` | 全部 provider 与模型（供下拉选择） |
 | GET | `/dsh-prompt-predict/efforts?provider=&model=` | 该模型真实支持的思考档位 |
 | POST | `/dsh-prompt-predict/settings` | 保存设置；`{ "reset": true }` 恢复默认 |
-| POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → 一条建议 |
+| POST | `/dsh-prompt-predict/suggest` | `{ sessionId }` → 一条建议；输入框附带 `composer: 'auto'` 优先恢复，或附带 `'manual'` 手动请求 |
+| POST | `/dsh-prompt-predict/dismiss` | `{ sessionId, round }` → `Tab` 采纳或 `Esc` 忽略后标记本轮已处理 |
+| POST | `/dsh-prompt-predict/select` | `{ sessionId, round, candidate, suggestion, truncated }` → 记住 Host 签发的同轮候选 |
 
 所有接口都认一个可选请求头 **`x-dsh-locale`**（`zh` / `en`，缺省即中文）：它决定校验错误与预测失败原因用哪种语言返回。客户端会自动带上当前界面语言。
 
@@ -223,7 +228,7 @@ pnpm add /path/to/dsh-prompt-predict
 ```bash
 git clone https://github.com/ferrisching/dsh-prompt-predict.git
 cd dsh-prompt-predict
-npm test        # 151 项 Host 端 + 247 项客户端渲染
+npm test        # 185 项 Host 端 + 261 项客户端渲染
 ```
 
 ```
@@ -237,8 +242,8 @@ npm test        # 151 项 Host 端 + 247 项客户端渲染
 ├── client/
 │   └── client.js        客户端：输入框 ghost text 覆盖层 + 设置页
 ├── test/
-│   ├── predict.mjs      151 项用例：文本裁剪、建议清洗、路由继承、设置校验、降级重试、去重、双语错误、接口端到端
-│   ├── client-render.mjs  247 项用例：极简 React 替身渲染 ghost/设置页，覆盖 Tab 焦点矩阵、几何、输入法/粘贴/附件、中英双语
+│   ├── predict.mjs      185 项用例：文本裁剪、建议清洗、路由继承、设置校验、降级重试、去重、双语错误、接口端到端
+│   ├── client-render.mjs  261 项用例：极简 React 替身渲染 ghost/设置页，覆盖 Tab 焦点矩阵、几何、输入法/粘贴/附件、中英双语
 │   ├── dsh-smoke.mjs      18 项真实 DSH 检查（可选；也承载 opt-in 右侧栏探针）
 │   └── README.md          测试矩阵、真实 DSH 冒烟与右侧栏探针说明
 ├── scripts/
@@ -309,7 +314,8 @@ npm test        # 151 项 Host 端 + 247 项客户端渲染
 
 - 仅在 DSH `0.2.2-rc.5` 上验证过，其它版本未测
 - 依赖宿主的 `conversation.composer.dock` 与 `settings.section` 两个 slot 名称，DSH 大版本调整后可能需要适配
-- 联想会消耗所选模型的额度；固定到快速小模型比跟随推理模型更省
+- 新生成的建议会消耗所选模型的额度；命中缓存时不会调用模型
+- 重启 Host 后恢复需要 profile 目录以及可校验的轮次。对于尚未载入 Host 的会话，插件使用 DSH 可选的只读会话查询服务；校验不了就不会复用原句。缓存不支持多个 Host 进程同时使用同一个 profile。
 
 ## 📄 许可
 

@@ -22,6 +22,8 @@ const DSH_CLI = process.env.DSH_SMOKE_DSH
   || '/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh';
 const EDGE = process.env.DSH_SMOKE_EDGE
   || '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
+// A JS CLI entry avoids a shell wrapper on Windows. Never interpolate paths into a shell.
+const dshCommand = (args) => /\.[cm]?js$/i.test(DSH_CLI) ? [process.execPath, [DSH_CLI, ...args]] : [DSH_CLI, args];
 const KEEP = process.env.DSH_SMOKE_KEEP === '1';
 const SIDEBAR = process.env.DSH_SMOKE_SIDEBAR === '1';
 const tmp = mkdtempSync(join(tmpdir(), 'dsh-smoke-'));
@@ -39,8 +41,16 @@ function start(cmd, args, opts = {}) {
   return child;
 }
 function stopAll() {
-  for (const child of children.reverse()) {
-    try { process.kill(-child.pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch {} }
+  for (const child of children.splice(0).reverse()) {
+    if (!Number.isSafeInteger(child.pid) || child.pid <= 0) continue;
+    if (process.platform === 'win32') {
+      // Only stop a still-running process tree started by this fixture.
+      if (child.exitCode === null && !child.signalCode) {
+        try { execFileSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }); } catch { /* already stopped */ }
+      }
+    } else {
+      try { process.kill(-child.pid, 'SIGTERM'); } catch { try { child.kill('SIGTERM'); } catch {} }
+    }
   }
 }
 process.on('exit', stopAll);
@@ -78,7 +88,8 @@ const llm = createServer((req, res) => {
     const rerollText = rerollCount === 1 ? '换个思路：先补测试再实现' : `第${rerollCount}版建议：先补测试再实现`;
     const multiline = /MULTILINE_CODE/.test(text);
     const codeText = '```js\nfunction demo() {\n  return 42;\n}\n```';
-    const answer = predict ? (multiline ? codeText : (reroll ? rerollText : '先补测试再实现')) : '已完成。';
+    const nextRoundText = /SMOKE_NEXT_ROUND/.test(text) ? '检查下一轮的结果' : '先补测试再实现';
+    const answer = predict ? (multiline ? codeText : (reroll ? rerollText : nextRoundText)) : '已完成。';
     llmCalls.push({ predict, reroll, at: Date.now() });
     if (String(req.url).endsWith('/chat/completions')) {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
@@ -95,18 +106,20 @@ await new Promise((r) => llm.listen(llmPort, '127.0.0.1', r));
 
 // ---------- disposable DSH profile ----------
 const home = join(tmp, 'home');
-execFileSync(DSH_CLI, ['--profile', 'smoke', '--from-default-profile', 'web', '--dump-config'], {
+execFileSync(...dshCommand(['--profile', 'smoke', '--from-default-profile', 'web', '--dump-config']), {
   env: { ...process.env, DSH_HOME: home }, stdio: 'ignore',
 });
-const packOut = execFileSync('npm', ['pack', '--pack-destination', tmp], { cwd: repo, encoding: 'utf8' });
+const packArgs = ['pack', '--pack-destination', tmp];
+const npmCommand = process.env.npm_execpath ? [process.execPath, [process.env.npm_execpath, ...packArgs]] : ['npm', packArgs];
+const packOut = execFileSync(...npmCommand, { cwd: repo, encoding: 'utf8' });
 const tgz = join(tmp, packOut.trim().split('\n').pop());
-execFileSync(DSH_CLI, ['plugin', '--profile', 'smoke', 'add', tgz], {
+execFileSync(...dshCommand(['plugin', '--profile', 'smoke', 'add', tgz]), {
   env: { ...process.env, DSH_HOME: home }, stdio: 'ignore',
 });
 
 if (SIDEBAR) {
   try {
-    execFileSync(DSH_CLI, ['plugin', '--profile', 'smoke', 'add', 'dsh-better-sidebar@0.30.1', '--config.minimumReleaseAge=0'], {
+    execFileSync(...dshCommand(['plugin', '--profile', 'smoke', 'add', 'dsh-better-sidebar@0.30.1', '--config.minimumReleaseAge=0']), {
       env: { ...process.env, DSH_HOME: home }, stdio: 'ignore',
     });
     const profilePkgPath = join(home, 'profiles', 'smoke', 'package.json');
@@ -149,7 +162,7 @@ writeFileSync(join(home, 'profiles', 'smoke', 'cordis.patch.yml'), `- id: agent-
 `);
 
 let output = '';
-const dsh = start(DSH_CLI, ['--profile', 'smoke', '--no-open', '--port', '0'], {
+const dsh = start(...dshCommand(['--profile', 'smoke', '--no-open', '--port', '0']), {
   env: { ...process.env, DSH_HOME: home, SMOKE_API_KEY: 'dummy' }, cwd: tmp,
 });
 dsh.stdout.on('data', (c) => { output += c; });
@@ -163,7 +176,7 @@ const port = new URL(url).port;
 // ---------- headless Edge + CDP ----------
 const edgePort = await freePort();
 const edge = start(EDGE, [
-  '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+  '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--lang=zh-CN', '--accept-lang=zh-CN',
   `--remote-debugging-port=${edgePort}`, `--user-data-dir=${join(tmp, 'edge')}`, 'about:blank',
 ]);
 await waitFor(async () => (await fetch(`http://127.0.0.1:${edgePort}/json/version`)).ok, { timeout: 15000 });
@@ -205,13 +218,46 @@ const pressTab = async () => {
   }
 };
 const focusEditor = () => evalInPage(`document.querySelector('[contenteditable="true"]')?.focus()`);
-const pressArrow = async (key, code, vk) => {
+const pressKey = async (key, code, vk) => {
   for (const type of ['keyDown', 'keyUp']) {
     await send('Input.dispatchKeyEvent', {
       type, key, code, windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk,
     });
   }
 };
+
+// Observe the composer's own cache lookups. An empty editor alone could also mean
+// the new document hasn't mounted, or the Host couldn't find the session.
+const cacheReplies = [];
+ws.addEventListener('message', ({ data }) => {
+  const { method, params } = JSON.parse(data);
+  if (method === 'Network.responseReceived' && new URL(params.response.url).pathname === '/dsh-prompt-predict/suggest'
+      && params.response.mimeType === 'application/json') cacheReplies.push(params.requestId);
+});
+await send('Network.enable');
+const predictionCount = () => llmCalls.filter((c) => c.predict).length;
+async function reloadComposer() {
+  const since = cacheReplies.length;
+  const origin = await evalInPage('performance.timeOrigin');
+  await send('Page.reload');
+  await waitFor(() => evalInPage(`performance.timeOrigin !== ${origin} && !!document.querySelector('[contenteditable="true"]')`), { timeout: 20000 });
+  return since;
+}
+async function waitForCacheReply(since, matches, label) {
+  return waitFor(async () => {
+    for (const requestId of cacheReplies.slice(since)) {
+      // responseReceived precedes the body; getResponseBody may need another poll.
+      const reply = await send('Network.getResponseBody', { requestId }).catch(() => null);
+      if (reply && matches(JSON.parse(reply.body))) return true;
+    }
+    throw new Error(`no composer response for ${label}`);
+  });
+}
+async function expectConsumed(since, count, key) {
+  await waitForCacheReply(since, (r) => r.code === 'suggestion_suppressed', key);
+  await waitFor(async () => { const s = await state(); return s.text === '' && !s.ghost; });
+  check(`真实 DSH：${key} 后同轮刷新不再提示，也不调用模型`, predictionCount() === count);
+}
 
 await waitFor(() => evalInPage(`!!document.querySelector('[contenteditable="true"]')`), { timeout: 20000 });
 // 首次启动有「预览版说明 → 继续」引导，先关掉
@@ -386,6 +432,14 @@ await sleep(600);
 let s = await state();
 check('真实 DSH：焦点在外部输入框时 Tab 不采纳', s.text === '' && s.ghost === '先补测试再实现', JSON.stringify(s));
 
+// 待用的原句在新页面恢复，即使 mock 恰好总返回同一句，也不能悄悄重问。
+const pendingText = (await state()).ghost;
+const beforeRestore = predictionCount();
+const pendingReload = await reloadComposer();
+await waitForCacheReply(pendingReload, (r) => r.restored === true && r.suggestion === pendingText, 'restore');
+await waitFor(async () => (await state()).ghost === pendingText);
+check('真实 DSH：未处理的灰字刷新后原样恢复，零额外模型调用', predictionCount() === beforeRestore);
+
 // composer 聚焦时 Tab 采纳
 await focusEditor();
 await pressTab();
@@ -395,17 +449,23 @@ await waitFor(async () => {
 }, { timeout: 5000 });
 check('真实 DSH：composer 聚焦时 Tab 采纳', true);
 
-// 重新加载后再清空草稿（采纳后 dock 已 disarm，刷新才会重新武装）
-await send('Page.reload');
-await sleep(5000);
-await waitFor(() => evalInPage(`!!document.querySelector('[contenteditable="true"]')`), { timeout: 20000 });
+// 刷新后清空已采纳的草稿，不等于开始新的一轮。
+const beforeTabReload = predictionCount();
+const tabReload = await reloadComposer();
 await focusEditor();
-await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 4 });
-await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 4 });
-await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
-await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
-await waitFor(async () => Boolean((await state()).ghost), { timeout: 10000 });
-const beforeReroll = (await state()).ghost;
+for (const type of ['keyDown', 'keyUp']) {
+  await send('Input.dispatchKeyEvent', { type, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: process.platform === 'darwin' ? 4 : 2 });
+}
+await pressKey('Backspace', 'Backspace', 8);
+await expectConsumed(tabReload, beforeTabReload, 'Tab');
+
+// 推进真实会话，而非靠重载解除同轮的采纳标记，再继续检查原有的重抽和历史。
+await focusEditor();
+await send('Input.insertText', { text: 'SMOKE_NEXT_ROUND 继续验证下一轮' });
+await evalInPage(`document.querySelector('button[aria-label="发送消息"]')?.click()`);
+const beforeReroll = '检查下一轮的结果';
+await waitFor(async () => (await state()).ghost === beforeReroll, { timeout: 20000 });
+check('真实 DSH：推进会话后重新自动预测', predictionCount() > beforeTabReload);
 await evalInPage(`(() => { const b=[...document.querySelectorAll('button')].find((x)=>x.textContent.trim()==='↻'); b?.click(); })()`);
 await waitFor(async () => { const s2 = await state(); return s2.ghost && s2.ghost !== beforeReroll && !/^正在生成/.test(s2.ghost); }, { timeout: 10000 });
 check('真实 DSH：reroll 后 ghost 换成新建议', true, `${beforeReroll} -> ${(await state()).ghost}`);
@@ -413,12 +473,18 @@ check('真实 DSH：reroll 后 ghost 换成新建议', true, `${beforeReroll} ->
 // ↓ 生成下一条、↑ 回到上一条（本轮历史）
 const afterReroll = (await state()).ghost;
 await focusEditor();
-await pressArrow('ArrowDown', 'ArrowDown', 40);
-await waitFor(async () => { const s3 = await state(); return s3.ghost && s3.ghost !== afterReroll && !/^正在生成/.test(s3.ghost); }, { timeout: 10000 });
+const beforeDown = predictionCount();
+await pressKey('ArrowDown', 'ArrowDown', 40);
+await waitFor(async () => {
+  const s3 = await state();
+  if (s3.ghost && s3.ghost !== afterReroll && !/^正在生成/.test(s3.ghost)) return true;
+  const dock = await evalInPage(`({ focusedEditor: document.activeElement?.isContentEditable, controls: document.querySelector('[data-prompt-predict-ghost]')?.innerText })`);
+  throw new Error(`ArrowDown: ${JSON.stringify({ ...s3, ...dock, extraPredictions: predictionCount() - beforeDown, rerollCount })}`);
+}, { timeout: 10000 });
 const afterDown = (await state()).ghost;
 check('真实 DSH：↓ 生成下一条建议', true, `${afterReroll} -> ${afterDown}`);
 await focusEditor();
-await pressArrow('ArrowUp', 'ArrowUp', 38);
+await pressKey('ArrowUp', 'ArrowUp', 38);
 await waitFor(async () => (await state()).ghost === afterReroll, { timeout: 5000 });
 check('真实 DSH：↑ 回到上一条建议', true, `${afterDown} -> ${(await state()).ghost}`);
 
@@ -434,8 +500,14 @@ await evalInPage(`(() => {
   localStorage.removeItem('dsh-prompt-predict.pausedUntil');
   window.dispatchEvent(new CustomEvent('dsh-prompt-predict:pause', { detail: { until: 0 } }));
 })()`);
-await waitFor(async () => Boolean((await state()).ghost), { timeout: 10000 });
+await waitFor(async () => (await state()).ghost === afterReroll, { timeout: 10000 });
 check('真实 DSH：恢复后重新出现 ghost', true);
+
+const beforeEscReload = predictionCount();
+await focusEditor();
+await pressKey('Escape', 'Escape', 27);
+await waitFor(async () => !(await state()).ghost);
+await expectConsumed(await reloadComposer(), beforeEscReload, 'Esc');
 
 // 多行代码预测：再发一条带标记的消息，mock 对这次预测返回代码块
 await focusEditor();

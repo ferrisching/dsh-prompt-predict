@@ -30,13 +30,12 @@ window.__ModuleLoader__.load({
         "ghost.truncated": "已截断 · 建议调高字数上限",
         "ghost.truncatedHint": "已截断 · 到 设置 → 提示词联想 → 高级 调高「字数上限」",
         "settings.title": "提示词联想",
-        "settings.desc": "助手回复结束后，在输入框里直接给出灰色建议（Tab 采纳、Esc 忽略、开始输入自动消失）。",
-        "settings.saveHint": "注意：所有设置修改后都需要点击「保存」才会生效。",
         "settings.enable": "启用联想",
         "settings.minimalDisplay": "极简显示",
+        "settings.shortcutsLine": "Ctrl/⌘+Shift+Space 手动触发 · Tab 采纳 · ↑/↓ 切换 · Esc 忽略",
+        "settings.updateSummary": "发现新版本 v{version}",
         "settings.minimalDisplayHint": "隐藏桌面灰字旁的按键提示和按钮；快捷键和触屏按钮照常可用",
         "settings.on": "已开启",
-        "settings.shortcutHint": "快捷键：Ctrl/⌘+Shift+Space 手动触发；Tab 采纳，↑ 回看，↓ 下一条，Esc 忽略",
         "settings.off": "已关闭",
         "settings.provider": "提供商",
         "settings.refreshModels": "刷新",
@@ -66,7 +65,8 @@ window.__ModuleLoader__.load({
         "settings.switchEnabledHint": "开启后可用 ↓ 生成下一条、↑ 回到上一条；关闭后方向键不切换",
         "settings.switchLimit": "最大切换次数",
         "settings.switchLimitHint": "每轮最多生成几条新建议（0–10；0 = 不限）；↑ 回看不计入",
-        "dock.switchLimit": "已达到最大切换次数（{limit} 次），按 ↑ 可回看",
+        "dock.switchLimit": "已达到最大切换次数（{limit} 次）",
+        "dock.detached": "继续对话后可生成新建议",
         "ghost.nextHint": "↓ 下一条",
         "ghost.prevHint": "↑ 上一条",
         "settings.outputCharsHintFull": "按字符计算建议长度。内部会据此推导一个宽裕的 token 安全网；万一仍被截断，ghost 会标出来并自动放宽重试一次",
@@ -174,13 +174,12 @@ window.__ModuleLoader__.load({
         "ghost.truncated": "cut off · raise the output length",
         "ghost.truncatedHint": "cut off · raise Output length in Settings → Prompt suggestions → Advanced",
         "settings.title": "Prompt suggestions",
-        "settings.desc": "Shows a gray suggestion in the composer right after each reply (Tab to accept, Esc to dismiss, start typing and it goes away).",
-        "settings.saveHint": "Note: all settings take effect only after you click Save.",
         "settings.enable": "Enable predictions",
         "settings.minimalDisplay": "Minimal display",
+        "settings.shortcutsLine": "Ctrl/⌘+Shift+Space to trigger · Tab accepts · ↑/↓ switch · Esc dismisses",
+        "settings.updateSummary": "Version v{version} is available",
         "settings.minimalDisplayHint": "Hides the hints and buttons next to desktop suggestions. Shortcuts and touch controls still work.",
         "settings.on": "On",
-        "settings.shortcutHint": "Shortcuts: Ctrl/⌘+Shift+Space to trigger; Tab accepts, ↑ goes back, ↓ goes to the next suggestion, Esc dismisses",
         "settings.off": "Off",
         "settings.provider": "Provider",
         "settings.refreshModels": "Refresh",
@@ -210,7 +209,8 @@ window.__ModuleLoader__.load({
         "settings.switchEnabledHint": "When on, ↓ generates the next suggestion and ↑ goes back to the previous one; off disables arrow switching",
         "settings.switchLimit": "Max switches",
         "settings.switchLimitHint": "max new suggestions generated per round (0–10; 0 = unlimited); going back with ↑ does not count",
-        "dock.switchLimit": "Switch limit reached ({limit}); press ↑ to go back",
+        "dock.switchLimit": "Switch limit reached ({limit})",
+        "dock.detached": "Continue the conversation to generate a new suggestion",
         "ghost.nextHint": "↓ next",
         "ghost.prevHint": "↑ previous",
         "settings.outputCharsHintFull": "Length is measured in characters. A generous token cap is derived from it; if a reply still gets cut, the ghost says so and it is retried once with more room",
@@ -538,6 +538,15 @@ window.__ModuleLoader__.load({
         ok: { color: token("state-success-primary", c.ok), fontSize: 12, marginTop: 8 },
         divider: { borderTop: "1px solid " + token("border-l1", c.divider), margin: "16px 0" },
         advBtn: { flex: "none", background: "none", border: 0, color: token("state-business-primary", c.link), fontSize: 13, cursor: "pointer", padding: 0 },
+        // 顶部压缩：说明与快捷键共用一行小字，省掉两块常驻段落。
+        subline: { color: token("label-tertiary", c.muted), fontSize: 12, lineHeight: 1.6, margin: "2px 0 0" },
+        // 未保存提示只在 dirty 时出现，替掉常驻的加粗说明。
+        dirtyBar: { margin: "10px 0 0", padding: "6px 10px", borderRadius: 8, fontSize: 12, lineHeight: 1.6, color: token("label-secondary", c.label), background: token("bg-layer-2", c.softBg) },
+        sectionHead: { display: "flex", alignItems: "baseline", gap: 8, margin: "20px 0 2px" },
+        sectionLabel: { fontSize: 12, fontWeight: 600, letterSpacing: ".02em", color: token("label-tertiary", c.muted), textTransform: "uppercase" },
+        summaryRow: { display: "flex", alignItems: "center", gap: 8, margin: "10px 0 0", padding: "7px 10px", borderRadius: 8, background: token("bg-layer-2", c.softBg), fontSize: 12.5, lineHeight: 1.6, color: token("label-primary", c.softText) },
+        summaryText: { flex: 1, minWidth: 0 },
+        countBadge: { flex: "none", color: token("label-tertiary", c.muted), fontSize: 11.5 },
       };
     }
     var SS = buildStyles();
@@ -558,14 +567,14 @@ window.__ModuleLoader__.load({
     }
     function dim(style, busy) { return busy ? Object.assign({}, style, { opacity: .55, cursor: "not-allowed" }) : style; }
 
-    function api(path, body) {
+    function api(path, body, options) {
       var controller = new AbortController();
       var timer = setTimeout(function () { controller.abort(); }, 15000);
       var langHeader = { "x-dsh-locale": currentLang() };
       var opts = body === undefined
         ? { headers: langHeader }
         : { method: "POST", headers: Object.assign({ "content-type": "application/json" }, langHeader), body: JSON.stringify(body) };
-      return fetch("./dsh-prompt-predict/" + path, Object.assign({}, opts, { signal: controller.signal }))
+      return fetch("./dsh-prompt-predict/" + path, Object.assign(opts, options, { signal: controller.signal }))
         .then(function (r) { return r.json(); })
         .finally(function () { clearTimeout(timer); });
     }
@@ -687,6 +696,14 @@ window.__ModuleLoader__.load({
           var x = Math.min(Math.max(r.left + r.width / 2, 0), (window.innerWidth || 1200) - 1);
           var y = Math.min(Math.max(r.top + Math.min(r.height / 2, 20), 0), (window.innerHeight || 800) - 1);
           var hit = document.elementFromPoint(x, y);
+          // A clickable ghost control can cover our sample point. Inspect the first
+          // underlying layer; a dialog or another pane must still block the editor.
+          if (hit && hit.closest && hit.closest('[data-prompt-predict-ghost]') && typeof document.elementsFromPoint === "function") {
+            hit = document.elementsFromPoint(x, y).find(function (node) {
+              return !(node.closest && node.closest('[data-prompt-predict-ghost]'));
+            });
+            if (!hit) return false;
+          }
           if (hit && hit !== el && !(el.contains && el.contains(hit)) && !(hit.contains && hit.contains(el))) return false;
         }
       } catch { return false; }
@@ -879,9 +896,18 @@ window.__ModuleLoader__.load({
       return Boolean(editorText(sessionId));
     }
 
-    // Tab 采纳的放宽规则：ghost 可见时，除了其它文本输入/下拉框和对话框，
+    function isOtherSession(sessionId, node) {
+      try {
+        var scope = node && node.closest && node.closest('[data-conversation-session]');
+        var id = scope && scope.getAttribute && scope.getAttribute('data-conversation-session');
+        return Boolean(id && id !== sessionId);
+      } catch { return false; }
+    }
+
+    // Tab 采纳的放宽规则：ghost 可见时，除了其它会话、文本输入/下拉框和对话框，
     // 任何焦点位置都可以采纳；工具栏/消息操作按钮不再让 Tab 跑掉。
     function canAcceptTabEverywhere(sessionId, event) {
+      if (isOtherSession(sessionId, document.activeElement) || isOtherSession(sessionId, event && event.target)) return false;
       try {
         var ed = findEditor(sessionId);
         var inEditor = function (node) {
@@ -914,6 +940,7 @@ window.__ModuleLoader__.load({
 
     // 快捷键只能在当前 composer 聚焦时接管；否则 Tab 应该正常用于焦点移动。
     function isComposerFocused(sessionId, event) {
+      if (isOtherSession(sessionId, document.activeElement) || isOtherSession(sessionId, event && event.target)) return false;
       try {
         var ed = findEditor(sessionId);
         if (!ed) return false;
@@ -1693,16 +1720,31 @@ window.__ModuleLoader__.load({
           : null);
     }
 
-    // 空候选数组用同一引用：清空时 setState 不会因新数组触发无意义重渲染。
+    // 会话内的显式选择要按点击顺序保存；同一会话的新查询等前一次写入完成。
+    // 这里只追踪尚未发送完的请求，待用内容始终由 Host 保存。
+    var pendingRoundWrites = new Map();
+    function writeRound(path, body) {
+      var previous = pendingRoundWrites.get(body.sessionId);
+      var send = function () { return api(path, body, { keepalive: true }).catch(function () {}); };
+      // 忽略/采纳不能等选中请求返回；Host 不允许 select 复活已经忽略的轮次。
+      var write = path === "select" && previous ? previous.then(send) : send();
+      var pending = previous && path === "dismiss" ? Promise.all([previous, write]) : write;
+      pendingRoundWrites.set(body.sessionId, pending);
+      pending.then(function () {
+        if (pendingRoundWrites.get(body.sessionId) === pending) pendingRoundWrites.delete(body.sessionId);
+      });
+    }
+
     // ================= 建议（composer dock 仅提供生命周期；显示覆盖到输入框内） =================
     function PredictionDock(props) {
       var sessionId = props.sessionId;
       var useSession = props.useSession;
       var useInput = props.useInput;
       var inputActions = props.inputActions;
+      var actionsRef = useRef(inputActions);
+      actionsRef.current = inputActions;
       var t = props.t;
       // 标题：先看会话 store（列表），再退回当前会话对象本身。两个 hook 都必须无条件调用。
-      // 选择器只返回标题字符串（原始值）：会话任何其他字段变化都不会触发 dock 重渲染。
       var useSessions = typeof props.useSessions === "function" ? props.useSessions : function () { return null; };
       var titleFromStore = useSessions(function (state) { return titleFromList(state, sessionId); });
       var titleFromCurrent = useSession(function (value) { return titleOfSession(value); });
@@ -1711,19 +1753,23 @@ window.__ModuleLoader__.load({
       var blank = useSession(function (value) { return Boolean(value && value.blank); });
       var removed = useSession(function (value) { return Boolean(value && value.removed); });
       var draft = useInput(function (value) { return String(value && value.draft || ""); });
-      var composerState = useInput(function (value) { return value; });
-      var _pa = useState(false), pastedAttachment = _pa[0], setPastedAttachment = _pa[1];
-      var _s = useState(""), suggestion = _s[0], setSuggestion = _s[1];
-      var _tr = useState(false), truncated = _tr[0], setTruncated = _tr[1];
-      var _busy = useState(null), busyState = _busy[0], setBusyState = _busy[1];   // 批量候选生成中
-      var busyTimerRef = useRef(null);   // 请求慢时才显示「生成中」，避免闪一下
-      var _pn = useState(Date.now()), pauseNow = _pn[0], setPauseNow = _pn[1];   // 暂停倒计时刷新
-      var _dt = useState(0), draftTick = _dt[0], setDraftTick = _dt[1];
-      var _theme = useState(0), themeTick = _theme[0], setThemeTick = _theme[1];
+      var inputAttachments = useInput(function (value) {
+        var keys = ["attachmentIds", "attachments", "files", "images", "pendingFiles", "uploadingFiles", "pendingAttachments"];
+        return Boolean(value && keys.some(function (key) { return Array.isArray(value[key]) && value[key].length > 0; }));
+      });
+      var _s = useState(null), selected = _s[0], setSelected = _s[1];
+      var selectedRef = useRef(null);
+      var _busy = useState(null), busyState = _busy[0], setBusyState = _busy[1];
+      var busyTimerRef = useRef(null);
+      var _pn = useState(Date.now()), pauseNow = _pn[0], setPauseNow = _pn[1];
+      var _et = useState(0), editorTick = _et[0], setEditorTick = _et[1];
+      var _theme = useState(0), setThemeTick = _theme[1];
       var _fail = useState(failState), failure = _fail[0], setFailure = _fail[1];
-      var _me = useState(""), manualError = _me[0], setManualError = _me[1];   // 手动换一条失败的原因
-      var _mk = useState("failed"), manualErrorKind = _mk[0], setManualErrorKind = _mk[1];
+      var showFailure = useRef(false);
+      var _me = useState(""), manualError = _me[0], setManualError = _me[1];
       var _en = useState(true), enabled = _en[0], setEnabled = _en[1];
+      var enabledRef = useRef(true);
+      var settingsRevision = useRef(0);
       var _min = useState(false), minimalDisplay = _min[0], setMinimalDisplay = _min[1];
       var _swi = useState(true), switchEnabled = _swi[0], setSwitchEnabled = _swi[1];
       var switchLimitRef = useRef(3);
@@ -1732,694 +1778,524 @@ window.__ModuleLoader__.load({
       var switchCountRef = useRef(0);
       var _swnt = useState(""), switchNotice = _swnt[0], setSwitchNotice = _swnt[1];
       var armed = useRef(true);
-      var abortRef = useRef(null);
-      var sessionRef = useRef(sessionId);
-      var dismissedByDraft = useRef(false);
-      // rc.2 不再把 draft 暴露给 slot，拿不到「输入框是否为空」。
-      // 用等价信号：建议可见时按下任何可打印键 = 用户开始输入 → 立即隐藏。
-      var _tk = useState(0), typedTick = _tk[0], setTypedTick = _tk[1];
-      var typedSince = useRef(false);
-      var composingRef = useRef(false);   // 输入法合成中：拼音串可能不落进 textContent，必须单独跟踪
-      var composingInComposer = useRef(false);   // 合成是否发生在 composer（用于判断结束后要不要重新预测）
-      var composingAt = useRef(0);   // 合成开始时间：状态卡住时自愈
-      var typedDuringRequest = useRef(false);   // 本次请求期间用户是否输入过（不依赖 DOM 可读性）
-      var selfInsertAt = useRef(0);   // 我们自己通过 inputActions 插入的时间（避免把插入当成用户输入）
-      var suppressPredictionUntil = useRef(0);   // 粘贴后短暂禁止自动预测，避免读不到正文时误换一条
-      var hadAttachmentsRef = useRef(false);   // 用于「删除附件」时清掉残留建议
-      var lastReplaceAt = useRef(0);   // ↓ 的 keydown/keyup 双保险去重
-      // 粘贴/拖入图片或文件：即使 DOM 里检测不到附件，也视为「有内容」。
-      var hasInputAttachments = function () {
-        var value = composerState;
-        if (!value || typeof value !== "object") return false;
-        var keys = ["attachments", "files", "images", "pendingFiles", "uploadingFiles", "pendingAttachments"];
-        for (var i = 0; i < keys.length; i += 1) {
-          var list = value[keys[i]];
-          if (Array.isArray(list) && list.length > 0) return true;
-        }
-        return false;
-      };
-      // 打字即隐藏；草稿删空会重新浮现（只有 Esc 才是永久忽略）
-      dismissedByDraft.current = draft.trim() !== "" || typedSince.current;
-      var foreignDraftNow = pastedAttachment || hasInputAttachments() || hasForeignDraft(sessionId);
-      var composingNow = isComposingNow();
-      var visibleSuggestion = (dismissedByDraft.current || foreignDraftNow || composingNow) ? "" : suggestion;
+      var requestRef = useRef(null);
+      var sessionRef = useRef(null);
+      var pasteMask = useRef(null);
+      var lastReplaceAt = useRef(0);
+      var typedSince = useRef(false);  // rc.2 起 draft 可能不可读；可打印键/输入事件兜底
+      var seenDomDraft = useRef(false);
+      var seenDomAttachments = useRef(false);
+      var composingRef = useRef(false);
+      var composingInComposer = useRef(false);
+      var composingAt = useRef(0);
+      var storeDraft = useRef("");
+      var storeAttachments = useRef(false);
+      var keyHandlers = useRef(null);
+      var unavailable = !sessionId || running || blank || removed;
 
-      // 把流式事件应用到 ghost：delta 逐段更新，reset 清空重来，done/error 落历史。
-      // 合成状态自愈：正常 compositionend 会清掉；若事件丢了，超过 5s 就不再据此丢弃结果。
+      // store 能确认清空时，不再依赖编辑器的 DOM 或按键兜底。
+      if (storeDraft.current.trim() && !draft.trim()) typedSince.current = false;
+      if (storeDraft.current !== draft || storeAttachments.current !== inputAttachments) pasteMask.current = null;
+      storeDraft.current = draft;
+      storeAttachments.current = inputAttachments;
+
       function isComposingNow() {
         if (!composingRef.current) return false;
         if (Date.now() - composingAt.current < 5000) return true;
-        composingRef.current = false;
+        composingRef.current = false;   // 宿主漏发 compositionend 时自愈
         return false;
       }
-      var applySuggestionEvent = function (event, isReroll, manual) {
-        if (!event || controllerAborted()) return;
+      function hasDraft() {
+        return typedSince.current || pasteMask.current || storeAttachments.current
+          || storeDraft.current.trim() !== "" || isComposingNow() || hasForeignDraft(sessionId);
+      }
+      function canSuggest() {
+        return !unavailable && sessionRef.current === sessionId && enabledRef.current
+          && pausedUntil <= Date.now() && !isPaused();
+      }
+      var draftHidden = hasDraft();
+      var visibleSuggestion = canSuggest() && !draftHidden && selected ? selected.suggestion.trim() : "";
+
+      function choose(entry) {
+        selectedRef.current = entry;
+        setSelected(entry);
+      }
+      function clearHistory() {
+        suggestionHistoryRef.current = [];
+        historyIndexRef.current = 0;
+        switchCountRef.current = 0;
+        setSwitchNotice("");
+      }
+      function endBusy() {
+        if (busyTimerRef.current) clearTimeout(busyTimerRef.current);
+        busyTimerRef.current = null;
+        setBusyState(null);
+      }
+      function ownsRequest(request) {
+        return requestRef.current === request && !request.controller.signal.aborted && canSuggest();
+      }
+      function cancelRequest() {
+        var request = requestRef.current;
+        requestRef.current = null;
+        if (request) {
+          if (request.timer) clearTimeout(request.timer);
+          request.controller.abort();
+        }
+      }
+      function beginBusy(request, immediate) {
+        setBusyState({ visible: immediate });
+        if (immediate) return;
+        busyTimerRef.current = setTimeout(function () {
+          if (!ownsRequest(request)) return;
+          busyTimerRef.current = null;
+          setBusyState(function (prev) { return prev ? { visible: true } : prev; });
+        }, 900);
+      }
+      function resetSuggestion() {
+        cancelRequest();
+        endBusy();
+        clearHistory();
+        showFailure.current = false;
+        setManualError("");
+        choose(null);
+      }
+
+      // 只有当前请求的 start/done 能绑定当前候选的 round；兼容不返回 round 的旧 Host。
+      function applySuggestionEvent(request, event) {
+        if (!event || !ownsRequest(request)) return;
+        if (typeof event.round === "string" && (event.type === "start" || event.type === "done")) {
+          request.round = event.round;
+          var first = suggestionHistoryRef.current[0];
+          if (first && first.round !== request.round) clearHistory();
+        }
         if (event.type === "start" || event.type === "reset") {
-          setManualError("");
-          // 不要在这里 endBusy：模型可能还要好几秒才吐第一个字，
-          // 占位必须留到第一段 delta 到达，否则中间是一片空白。
-          setSuggestion("");
-          setTruncated(false);
+          // start 不撤掉占位，等第一段文字到达再撤。
+          choose(null);
           return;
         }
         if (event.type === "delta" && typeof event.text === "string") {
           endBusy();
-          setManualError("");
-          if (isComposingNow() || typedDuringRequest.current || hasForeignDraft(sessionId)) {
-            typedSince.current = true;
-            if (manual) {
-              setManualError(tt(t, "dock.discarded", {
-                why: isComposingNow() ? tt(t, "dock.whyComposing")
-                  : typedDuringRequest.current ? tt(t, "dock.whyTyping") : tt(t, "dock.whyDraft"),
-              }));
-              setManualErrorKind("discarded");
-            }
-            return;
-          }
-          typedSince.current = false;
-          setSuggestion(event.text);
+          choose({ suggestion: event.text, truncated: false, round: request.round });
           return;
         }
-        if (event.type === "done" && typeof event.suggestion === "string") {
-          endBusy();
-          setManualError("");
-          if (isComposingNow() || typedDuringRequest.current || hasForeignDraft(sessionId)) {
-            // 用户在等待期间已经开始写（或正在用输入法合成）：不要把灰字盖上去，清空后再重新预测
-            typedSince.current = true;
-            if (manual) {
-              setManualError(tt(t, "dock.discarded", {
-                why: isComposingNow() ? tt(t, "dock.whyComposing")
-                  : typedDuringRequest.current ? tt(t, "dock.whyTyping") : tt(t, "dock.whyDraft"),
-              }));
-              setManualErrorKind("discarded");
-            }
-            armed.current = true;
-            setSuggestion("");
-            noteSuccess();
-            return;
-          }
-          typedSince.current = false;
-          var fullSuggestion = event.suggestion.trim();
-          if (isReroll) {
-            var hist = suggestionHistoryRef.current;
-            if (hist[hist.length - 1] !== fullSuggestion) hist.push(fullSuggestion);
+        if (event.type !== "done" && event.type !== "error") return;
+        requestRef.current = null;
+        endBusy();
+        if (event.type === "done" && typeof event.suggestion === "string" && event.suggestion.trim()) {
+          var entry = {
+            suggestion: event.suggestion, truncated: Boolean(event.truncated), round: request.round,
+            candidate: typeof event.candidate === "string" ? event.candidate : null,
+          };
+          var hist = suggestionHistoryRef.current;
+          var sameRound = hist.length && hist[hist.length - 1].round === entry.round;
+          var restoredIndex = event.restored && sameRound ? hist.findIndex(function (item) {
+            return item.suggestion === entry.suggestion && item.truncated === entry.truncated;
+          }) : -1;
+          if (restoredIndex >= 0) {
+            hist[restoredIndex] = entry; // 恢复可以重签 token，但不会增加历史或切换次数。
+            historyIndexRef.current = restoredIndex;
+          } else if (!event.restored && request.isReroll && sameRound) {
+            if (hist[hist.length - 1].suggestion === entry.suggestion) hist[hist.length - 1] = entry;
+            else hist.push(entry);
             historyIndexRef.current = hist.length - 1;
             switchCountRef.current += 1;
           } else {
-            suggestionHistoryRef.current = [fullSuggestion];
+            suggestionHistoryRef.current = [entry];
             historyIndexRef.current = 0;
             switchCountRef.current = 0;
           }
-          setSwitchNotice("");
-          setSuggestion(fullSuggestion);
-          setTruncated(Boolean(event.truncated));
-          noteSuccess();
-          recordRun(sessionId, Object.assign({}, event, { suggestion: fullSuggestion }), null, sessionTitle);
+          if (Number.isInteger(event.rerollCount) && event.rerollCount >= 0) switchCountRef.current = event.rerollCount;
+          setSwitchNotice(event.detached === true ? tt(t, "dock.detached")
+            : Number.isInteger(event.switchLimit) ? tt(t, "dock.switchLimit", { limit: event.switchLimit }) : "");
+          choose(entry);
+          // 草稿只隐藏候选，不取消请求，也不另发请求。保留原来不为隐藏结果写诊断历史的行为。
+          if (!event.restored) {
+            noteSuccess();
+            if (!hasDraft()) recordRun(sessionId, event, null, sessionTitle);
+          }
           return;
         }
-        if (event.type === "error") {
-          endBusy();
-          // 流式失败时可能已经渲染过半句；错误事件必须把 ghost 收回，
-          // 不能把半句留在输入框上方。
-          setSuggestion("");
-          setTruncated(false);
-          var reason = event.reason || tt(t, isReroll ? "dock.rerollFailed" : "dock.noSuggestion");
-          // 会话已不存在（删除/关闭标签/新建会话尚未注册）：静默停用，不弹失败提示。
-          if (event.code === "session_not_found" || /session.*(not found|不存在)/i.test(String(reason))) {
-            setManualError("");
-            armed.current = false;
+        // 流式失败不能留下半句。服务器未给新候选并不是模型失败。
+        choose(null);
+        if (event.code === "suggestion_detached") {
+          setSwitchNotice(tt(t, "dock.detached"));
+          return;
+        }
+        var reason = event.reason || tt(t, request.isReroll ? "dock.rerollFailed" : "dock.noSuggestion");
+        if (event.code === "suggestion_suppressed" || event.code === "suggestion_stale"
+          || event.code === "session_not_found" || /session.*(not found|不存在)/i.test(String(reason))) return;
+        if (request.manual) setManualError(reason);
+        showFailure.current = true;
+        noteFailure(sessionId, reason);
+        recordRun(sessionId, null, reason, sessionTitle, { partialChars: event.partialChars, diagnostics: event.diagnostics });
+      }
+
+      // 手动请求可取代仍在等待/传输的自动请求；只有请求持有自己的 controller 才能改界面。
+      function runRequest(isReroll, manual, immediate) {
+        var current = selectedRef.current;
+        if (!canSuggest() || hasDraft() || (isReroll && !current)) return false;
+        var limit = switchLimitRef.current;
+        if (isReroll && limit > 0 && switchCountRef.current >= limit) {
+          setSwitchNotice(tt(t, "dock.switchLimit", { limit: limit }));
+          return true; // The shortcut was handled without sending a request.
+        }
+        var body = { sessionId: sessionId, composer: manual ? "manual" : "auto" };
+        if (isReroll) { body.reroll = true; body.avoid = current.suggestion.trim(); }
+        cancelRequest();
+        endBusy();
+        armed.current = false;
+        showFailure.current = false;
+        setManualError("");
+        setSwitchNotice("");
+        choose(null);
+        var request = { controller: new AbortController(), round: null, timer: null, started: false, isReroll: isReroll, manual: manual };
+        requestRef.current = request;
+        var send = function () {
+          if (!ownsRequest(request)) return;
+          if (hasDraft()) {
+            // 防抖期间才开始输入：尚未发请求，等清空后再发。
+            requestRef.current = null;
+            armed.current = true;
             return;
           }
-          if (manual) { setManualError(reason); setManualErrorKind("failed"); }
-          noteFailure(sessionId, reason);
-          recordRun(sessionId, null, reason, sessionTitle, { partialChars: event.partialChars, diagnostics: event.diagnostics });
+          request.started = true;
+          beginBusy(request, Boolean(isReroll || immediate));
+          var onEvent = function (event) { applySuggestionEvent(request, event); };
+          apiStream("suggest", body, onEvent, request.controller.signal)
+            .then(function (result) {
+              // 旧 Host 的 JSON 回退以及 NDJSON 缺失终止帧也走相同守卫。
+              if (result) onEvent(result.ok
+                ? Object.assign({ type: "done" }, result)
+                : Object.assign({ type: "error" }, result));
+            })
+            .catch(function (error) { onEvent({ type: "error", reason: String(error) }); });
+        };
+        var afterWrites = function () {
+          request.timer = null;
+          var previous = pendingRoundWrites.get(sessionId);
+          if (previous) previous.then(send);
+          else send();
+        };
+        if (manual) afterWrites();
+        else request.timer = setTimeout(afterWrites, 350);
+        return true;
+      }
+      function reroll() {
+        if (!switchEnabled || selectedRef.current !== selected) return;
+        runRequest(true, true);
+      }
+      function selectHistory(index) {
+        var entry = suggestionHistoryRef.current[index];
+        if (!entry || entry === selectedRef.current) return;
+        cancelRequest();
+        endBusy();
+        historyIndexRef.current = index;
+        choose(entry);
+        setSwitchNotice("");
+        if (entry.round && entry.candidate) {
+          writeRound("select", {
+            sessionId: sessionId, round: entry.round, candidate: entry.candidate,
+            suggestion: entry.suggestion, truncated: entry.truncated,
+          });
         }
-      };
-      var endBusy = function () {
-        if (busyTimerRef.current) { clearTimeout(busyTimerRef.current); busyTimerRef.current = null; }
-        setBusyState(null);
-      };
-      var beginBusy = function (immediate) {
-        if (busyTimerRef.current) clearTimeout(busyTimerRef.current);
-        setBusyState({ visible: Boolean(immediate) });
-        if (immediate) { busyTimerRef.current = null; return; }
-        busyTimerRef.current = setTimeout(function () {
+      }
+      function isVisible(entry) {
+        return Boolean(entry && entry === selectedRef.current && entry.suggestion.trim() && canSuggest() && !hasDraft());
+      }
+      function dismiss(entry) {
+        // Tab 插入后编辑器已经有内容，不能再次用 hasDraft 检查；候选身份仍必须一致。
+        if (entry !== selectedRef.current || sessionRef.current !== sessionId) return;
+        armed.current = false;
+        resetSuggestion();
+        if (entry.round) writeRound("dismiss", { sessionId: sessionId, round: entry.round });
+      }
+      function bumpEditor() { setEditorTick(function (n) { return n + 1; }); }
+      function maskPaste() {
+        // 粘贴/投递到草稿出现前先隐藏；上传被拒绝时不能永久锁住建议。
+        if (pasteMask.current) clearTimeout(pasteMask.current);
+        var timer = setTimeout(function () {
+          if (pasteMask.current !== timer) return;
+          pasteMask.current = null;
+          bumpEditor();
+        }, 1500);
+        pasteMask.current = timer;
+        bumpEditor();
+      }
+
+      // 用同步生命周期收尾；切换后的第一帧以及旧全局 Tab 回调都不能显示/采纳上一轮。
+      useLayoutEffect(function () {
+        sessionRef.current = unavailable ? null : sessionId;
+        armed.current = true;
+        pasteMask.current = null;
+        typedSince.current = false;
+        seenDomDraft.current = false;
+        seenDomAttachments.current = false;
+        composingRef.current = false;
+        composingInComposer.current = false;
+        lastReplaceAt.current = 0;
+        resetSuggestion();
+        return function () {
+          sessionRef.current = null;
+          selectedRef.current = null;
+          if (pasteMask.current) clearTimeout(pasteMask.current);
+          pasteMask.current = null;
+          cancelRequest();
+          if (busyTimerRef.current) clearTimeout(busyTimerRef.current);
           busyTimerRef.current = null;
-          setBusyState(function (prev) { return prev ? { visible: true } : prev; });
-        }, 900);
-      };
-      // 失败提示里的「打开设置」：优先用宿主提供的导航能力，没有就复制路径兜底。
-      var findSettingsOpener = function () {
-        var fns = [props.openSettings, props.openSettingsPanel, props.openOptions,
-          props.host && props.host.openSettings, window.dsh && window.dsh.openSettings,
-          window.__DSH__ && window.__DSH__.openSettings];
-        for (var i = 0; i < fns.length; i += 1) if (typeof fns[i] === "function") return fns[i];
-        return null;
-      };
-      var openSettingsFromHint = function () {
-        var opener = findSettingsOpener();
-        if (opener) {
-          try { opener(); return; } catch { /* 回退到复制路径 */ }
-        }
-        try {
-          var text = tt(t, "dock.settingsPath");
-          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
-        } catch { /* 忽略剪贴板失败 */ }
-      };
-      var controllerAborted = function () {
-        return Boolean(abortRef.current && abortRef.current.signal.aborted) || sessionRef.current !== sessionId;
-      };
+        };
+      }, [sessionId, unavailable]);
+      useEffect(function () { setLiveSessionId(sessionId); }, [sessionId]);
+      useEffect(function () {
+        if (!armed.current) return;
+        runRequest(false, false);
+      }, [sessionId, unavailable, enabled, draft, inputAttachments, editorTick, pauseNow]);
 
       // 首次读取启用状态；设置页保存后通过事件让当前会话立即生效。
+      function applySettings(effective) {
+        if (typeof effective.enabled === "boolean") {
+          var on = effective.enabled;
+          enabledRef.current = on;
+          if (!on) { resetSuggestion(); armed.current = true; }
+          setEnabled(on);
+        }
+        if (typeof effective.minimalDisplay === "boolean") setMinimalDisplay(effective.minimalDisplay);
+        if (typeof effective.switchEnabled === "boolean") setSwitchEnabled(effective.switchEnabled);
+        if (typeof effective.switchLimit === "number") {
+          switchLimitRef.current = Math.min(10, Math.max(0, Math.floor(effective.switchLimit)));
+        }
+        if (typeof effective.historySize === "number") {
+          historyLimit = effective.historySize;
+          trimHistoryToLimit(historyLimit);
+        }
+      }
       useEffect(function () {
+        var active = true;
+        var revision = settingsRevision.current;
         api("status").then(function (j) {
-          setEnabled(!(j && j.effective && j.effective.enabled === false));
-          setMinimalDisplay(j?.effective?.minimalDisplay === true);
-          setSwitchEnabled(!(j && j.effective && j.effective.switchEnabled === false));
-          switchLimitRef.current = Math.min(10, Math.max(0, Math.floor(Number(j && j.effective && j.effective.switchLimit) || 0)));
-          if (j && j.effective && typeof j.effective.historySize === "number") {
-            historyLimit = j.effective.historySize;
-            trimHistoryToLimit(historyLimit);
-          }
-        }).catch(function () { });
+          if (active && revision === settingsRevision.current && j && j.effective) applySettings(j.effective);
+        }).catch(function () {});
+        return function () { active = false; };
       }, [sessionId]);
       useEffect(function () {
         var changed = function (event) {
-          var on = event.detail?.enabled !== false;
-          setEnabled(on);
-          if (typeof event.detail?.minimalDisplay === "boolean") setMinimalDisplay(event.detail.minimalDisplay);
-          if (event.detail && typeof event.detail.switchEnabled === "boolean") setSwitchEnabled(event.detail.switchEnabled);
-          if (event.detail && typeof event.detail.switchLimit === "number") {
-            switchLimitRef.current = Math.min(10, Math.max(0, Math.floor(event.detail.switchLimit)));
-          }
-          if (event.detail && typeof event.detail.historySize === "number") {
-            historyLimit = event.detail.historySize;
-            trimHistoryToLimit(historyLimit);
-          }
-          if (!on) {
-            endBusy();
-            setSuggestion("");
-            if (abortRef.current) abortRef.current.abort();
-          }
+          settingsRevision.current += 1;
+          applySettings(event.detail || {});
         };
-        window.addEventListener("dsh-prompt-predict:settings", changed);
-        return function () { window.removeEventListener("dsh-prompt-predict:settings", changed); };
-      }, []);
-
-      // 键位级粘贴兜底：不阻止默认行为；若 Cmd/Ctrl+V 之后编辑器没变化，
-      // 主动读剪贴板并插入（应对 Electron 里 paste 事件无 clipboardData 或宿主没处理）。
-      useEffect(function () {
-        if (!inputActions) return;
-        var onPasteKey = function (event) {
-          if (event.isComposing || !isComposerFocused(sessionId, event)) return;
-          if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-          if (event.key !== "v" && event.key !== "V") return;
-          suppressPredictionUntil.current = Date.now() + 1500;
-          // 先无条件收起 ghost：编辑器正文读不到时，DOM 守卫也挡不住它压字
-          setSuggestion("");
-          var before = editorText(sessionId);
-          setTimeout(function () {
-            if (editorText(sessionId) !== before) return;   // 编辑器已经粘贴成功
-            try {
-              if (!navigator.clipboard || !navigator.clipboard.readText) return;
-              navigator.clipboard.readText().then(function (text) {
-                if (editorText(sessionId) !== before) return;
-                if (!text) return;   // Electron 下读不到剪贴板是常态，不要误报失败
-                selfInsertAt.current = Date.now();
-                var span = inputActions.captureInsertion();
-                var inserted = false;
-                try { inserted = inputActions.insertText(text, span); } catch { inserted = false; }
-                setTimeout(function () {
-                  if (editorText(sessionId) !== before) return;
-                  // 编辑器 API 没写进去：再试一次原生插入命令
-                  try {
-                    selfInsertAt.current = Date.now();
-                    if (document.execCommand) document.execCommand("insertText", false, text);
-                  } catch { /* 忽略 */ }
-                  setTimeout(function () { /* 写不进去也保持安静，避免误报 */ }, 120);
-                }, 120);
-              }).catch(function () { /* 读不到剪贴板就算了 */ });
-            } catch { /* 忽略 */ }
-          }, 180);
-        };
-        var pasteKeyTarget = typeof document.addEventListener === "function" ? document : window;
-        pasteKeyTarget.addEventListener("keydown", onPasteKey, true);
-        return function () { pasteKeyTarget.removeEventListener("keydown", onPasteKey, true); };
-      }, [sessionId, inputActions]);
-
-      // 兜底粘贴：不阻止默认行为；若编辑器在 60ms 内没吃进这段文本，
-      // 说明宿主/编辑器的粘贴处理失效了，由插件用 inputActions 插进去。
-      useEffect(function () {
-        if (!inputActions) return;
-        var onPaste = function (event) {
-          if (!isComposerFocused(sessionId, event)) return;
-          var data = event && event.clipboardData;
-          var files = data && data.files;
-          var items = data && data.items;
-          var hasFile = Boolean(files && files.length)
-            || (items && Array.prototype.some.call(items, function (item) { return item && item.kind === "file"; }));
-          if (hasFile) {
-            setPastedAttachment(true);
-            setSuggestion("");
-            suppressPredictionUntil.current = Date.now() + 5000;
-            return;
-          }
-          var text = data && typeof data.getData === "function" ? data.getData("text/plain") : "";
-          if (!text) return;
-          suppressPredictionUntil.current = Date.now() + 1500;
-          setSuggestion("");
-          var before = editorText(sessionId);
-          setTimeout(function () {
-            var after = editorText(sessionId);
-            if (after !== before) return;   // 编辑器自己处理了
-            try {
-              selfInsertAt.current = Date.now();
-              var span = inputActions.captureInsertion();
-              inputActions.insertText(text, span);
-            } catch { /* 插不进去就算了，保持原样 */ }
-          }, 60);
-        };
-        var pasteTarget = typeof document.addEventListener === "function" ? document : window;
-        pasteTarget.addEventListener("paste", onPaste, true);
-        return function () { pasteTarget.removeEventListener("paste", onPaste, true); };
-      }, [sessionId, inputActions]);
-
-      // 拖入图片/文件：同样视为已有内容。
-      useEffect(function () {
-        var onDrop = function (event) {
-          if (!isComposerFocused(sessionId, event)) return;
-          var files = event.dataTransfer && event.dataTransfer.files;
-          if (!files || !files.length) return;
-          setPastedAttachment(true);
-          setSuggestion("");
-          suppressPredictionUntil.current = Date.now() + 5000;
-        };
-        var dropTarget = typeof document.addEventListener === "function" ? document : window;
-        dropTarget.addEventListener("drop", onDrop, true);
-        return function () { dropTarget.removeEventListener("drop", onDrop, true); };
-      }, [sessionId]);
-
-      // 历史记录「插入」：把旧建议塞回当前输入框（settings 与 dock 是不同实例，用窗口事件连接）
-      useEffect(function () {
-        var onInsert = function (event) {
-          var text = event && event.detail && typeof event.detail.text === "string" ? event.detail.text : "";
-          if (!text || !inputActions) return;
-          try {
-            var span = inputActions.captureInsertion();
-            if (inputActions.insertText(text, span)) {
-              setSuggestion("");
-              typedSince.current = false;
-            }
-          } catch { /* 插入失败就保持原样 */ }
-        };
-        window.addEventListener("dsh-prompt-predict:insert", onInsert);
-        return function () { window.removeEventListener("dsh-prompt-predict:insert", onInsert); };
-      }, [inputActions]);
-
-      useEffect(function () {
-        sessionRef.current = sessionId;
-        setLiveSessionId(sessionId);   // 给设置页取「会话实际模型」用（跨模块实例共享）
-        armed.current = true;
-        dismissedByDraft.current = false;
-        setSuggestion("");
-        setPastedAttachment(false);
-        endBusy();
-        typedSince.current = false;
-        if (abortRef.current) abortRef.current.abort();
-      }, [sessionId]);
-
-      useEffect(function () {
-        if (!enabled) return;
-        if (running) {
-          armed.current = true;
-          dismissedByDraft.current = false;
-          setPastedAttachment(false);
-          suggestionHistoryRef.current = [];
-          historyIndexRef.current = 0;
-          switchCountRef.current = 0;
-          setSwitchNotice("");
-          setSuggestion("");
-          typedSince.current = false;
-          if (abortRef.current) abortRef.current.abort();
-          return;
-        }
-        if (!sessionId || blank || removed || !armed.current || isPaused()) return;
-        if (pastedAttachment || hasInputAttachments() || draft.trim() !== "" || hasForeignDraft(sessionId)) return;
-        armed.current = false;
-        var controller = new AbortController();
-        abortRef.current = controller;
-        var timer = setTimeout(function () {
-          var finished = false;
-          var onEvent = function (event) {
-            if (event && (event.type === "done" || event.type === "error")) finished = true;
-            applySuggestionEvent(event, false);
-          };
-          typedDuringRequest.current = false;
-          beginBusy();
-          apiStream("suggest", { sessionId: sessionId }, onEvent, controller.signal)
-            .then(function (result) {
-              if (!finished && result) {
-                applySuggestionEvent(result.ok
-                  ? Object.assign({ type: "done" }, result)
-                  : Object.assign({ type: "error" }, result), false);
-              }
-            })
-            .catch(function (error) {
-              endBusy();
-              if (controller.signal.aborted) return;
-              setSuggestion("");
-              setTruncated(false);
-              noteFailure(sessionId, String(error));
-              recordRun(sessionId, null, String(error), sessionTitle);
-            });
-        }, 350);
-        return function () {
-          clearTimeout(timer);
-          endBusy();
-          controller.abort();
-          if (abortRef.current === controller) abortRef.current = null;
-        };
-      }, [sessionId, running, blank, removed, draft, enabled, draftTick]);
-
-      // 直接盯编辑器 DOM：贴图、删图、打字、拖拽都会触发；不依赖 input 事件与正文可读性。
-      // 只要我们自己的插入不在进行中，任何内容变化都立刻收起建议。
-      useEffect(function () {
-        if (typeof MutationObserver === "undefined") return;
-        var ed = findEditor(sessionId);
-        if (!ed) return;
-        var scope = findComposerScope(sessionId) || ed;
-        // 任何位置出现/移除图片、附件节点都算：不依赖附件预览是否在 composer 子树内。
-        var isAttachmentNode = function (node) {
-          if (!node || node.nodeType !== 1) return false;
-          try {
-            if (typeof node.matches === "function" && node.matches('img, picture, video, canvas, [data-attachment], [data-file], [data-image], [data-lexical-decorator]')) return true;
-            if (typeof node.querySelector === "function" && node.querySelector('img, picture, video, canvas, [data-attachment], [data-file], [data-image], [data-lexical-decorator], [contenteditable="false"]')) return true;
-          } catch { return false; }
-          return false;
-        };
-        var observer = new MutationObserver(function (mutations) {
-          if (Date.now() - selfInsertAt.current < 500) return;   // 我们自己的插入
-          var addedAttachment = false;
-          var removedAttachment = false;
-          try {
-            addedAttachment = (mutations || []).some(function (mutation) {
-              return Array.from(mutation.addedNodes || []).some(isAttachmentNode);
-            });
-            removedAttachment = (mutations || []).some(function (mutation) {
-              return Array.from(mutation.removedNodes || []).some(isAttachmentNode);
-            });
-          } catch { addedAttachment = false; removedAttachment = false; }
-          if (addedAttachment || removedAttachment) {
-            setSuggestion("");   // 贴图或删图：立即收起，避免残影
-            if (addedAttachment) setPastedAttachment(true);
-            if (removedAttachment && !editorText(sessionId)) setPastedAttachment(false);   // 删空了就恢复后续预测
-            hadAttachmentsRef.current = false;
-            return;
-          }
-          var hasAttach = editorHasAttachments(sessionId);
-          if (hasAttach || hadAttachmentsRef.current) setSuggestion("");   // 附件出现或刚被删除
-          hadAttachmentsRef.current = hasAttach;
-          setTypedTick(function (n) { return n + 1; });
-        });
-        observer.observe(scope, { childList: true, subtree: true, characterData: true });
-        var outer = scope.parentElement;
-        if (outer && outer !== document.body) observer.observe(outer, { childList: true, subtree: true, characterData: true });
-        return function () { observer.disconnect(); };
-      }, [sessionId]);
-
-
-      // 输入法合成：合成期间一律不显示建议；合成结束若没留下文字，视为「取消输入」，
-      // 重新允许预测。始终挂载，避免「请求在途中合成」这类竞态漏判。
-      useEffect(function () {
-        var onStart = function () {
-          // 不在这里判断焦点：合成期焦点可能落在 Lexical 的隐藏节点上，判断失败就会
-          // 把拼音和 ghost 叠在一起。合成只可能来自输入，隐藏是无害的。
-          composingRef.current = true;
-          composingAt.current = Date.now();
-          composingInComposer.current = isComposerFocused(sessionId);
-          typedDuringRequest.current = true;
-          typedSince.current = true;
-          endBusy();
-          setSuggestion("");
-          setTypedTick(function (n) { return n + 1; });
-        };
-        var onEnd = function () {
-          composingRef.current = false;
-          if (!composingInComposer.current) { setTypedTick(function (n) { return n + 1; }); return; }
-          // 无论是否留下文字都重新武装：留下文字时靠 hasForeignDraft 挡住，
-          // 等用户把文字删空后，始终挂载的 input 监听就能重新触发预测。
-          armed.current = true;
-          if (!editorText(sessionId)) {
-            typedSince.current = false;
-            setDraftTick(function (n) { return n + 1; });
-          }
-          setTypedTick(function (n) { return n + 1; });
-        };
-        window.addEventListener("compositionstart", onStart, true);
-        window.addEventListener("compositionend", onEnd, true);
-        return function () {
-          window.removeEventListener("compositionstart", onStart, true);
-          window.removeEventListener("compositionend", onEnd, true);
-        };
-      }, [sessionId]);
-
-      // ↓ 常驻：有建议时换一条；没有建议且输入框为空时也直接拉一条。
-      // 监听来自模块级转发（注册得最早）和编辑器自身的事件，双重保险。
-      var handleDown = function (native) {
-        if (!native || native.isComposing) return;
-        if (native.code && native.code !== "ArrowDown" && native.code !== "Down") return;
-        if (!isComposerFocused(sessionId, native)) return;
-        if (!enabled || pausedUntil > Date.now()) return;
-        if (native.type === "keyup" && Date.now() - lastReplaceAt.current < 400) return;
-        lastReplaceAt.current = Date.now();
-        if (busyState) {
-          // 正在生成：至少把占位显示出来，证明按键已生效
-          setBusyState(function (prev) { return prev ? { visible: true } : prev; });
-          native.preventDefault();
-          native.stopPropagation();
-          if (typeof native.stopImmediatePropagation === "function") native.stopImmediatePropagation();
-          return;
-        }
-        if (!switchEnabled) return;
-        if (visibleSuggestion) {
-          var hist = suggestionHistoryRef.current;
-          if (historyIndexRef.current < hist.length - 1) {
-            historyIndexRef.current += 1;
-            setSuggestion(hist[historyIndexRef.current]);
-            setSwitchNotice("");
-          } else {
-            reroll();
-          }
-        } else {
-          if (pastedAttachment || hasInputAttachments() || draft.trim() !== "" || hasForeignDraft(sessionId)) return;
-          if (!runRequest(false, true)) return;
-        }
-        native.preventDefault();
-        native.stopPropagation();
-        if (typeof native.stopImmediatePropagation === "function") native.stopImmediatePropagation();
-      };
-      useEffect(function () {
-        var onForward = function (event) {
-          handleDown(event && event.detail ? event.detail.native : null);
-        };
-        window.addEventListener("dsh-prompt-predict:down", onForward);
-        var ed = findEditor(sessionId);
-        var onEditorKey = function (event) { handleDown(event); };
-        if (ed && typeof ed.addEventListener === "function") {
-          ed.addEventListener("keydown", onEditorKey, true);
-          ed.addEventListener("keyup", onEditorKey, true);
-        }
-        return function () {
-          window.removeEventListener("dsh-prompt-predict:down", onForward);
-          if (ed && typeof ed.removeEventListener === "function") {
-            ed.removeEventListener("keydown", onEditorKey, true);
-            ed.removeEventListener("keyup", onEditorKey, true);
-          }
-        };
-      }, [enabled, switchEnabled, sessionId, visibleSuggestion, draft, busyState]);
-
-      // 手动触发：Ctrl/Cmd+Shift+Space。不用 Ctrl+Space，避免和 macOS 切换输入法冲突。
-      useEffect(function () {
-        var onManual = function (event) {
-          if (event.isComposing) return;
-          if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return;
-          if (event.key !== " " && event.code !== "Space") return;
-          if (!isComposerFocused(sessionId, event)) return;
-          if (!enabled || pausedUntil > Date.now()) return;
-          if (visibleSuggestion) {
-            if (runRequest(true)) { event.preventDefault(); event.stopPropagation(); }
-            return;
-          }
-          if (pastedAttachment || hasInputAttachments() || draft.trim() !== "" || hasForeignDraft(sessionId)) return;
-          if (runRequest(false)) { event.preventDefault(); event.stopPropagation(); }
-        };
-        window.addEventListener("keydown", onManual, true);
-        return function () { window.removeEventListener("keydown", onManual, true); };
-      }, [enabled, sessionId, visibleSuggestion, draft, suggestion]);
-
-      // 暂停/恢复：暂停时把已显示的建议收掉；恢复时重新武装并触发一次预测
-      useEffect(function () {
-        var id = setInterval(function () { setPauseNow(Date.now()); }, 15000);
-        return function () { clearInterval(id); };
-      }, []);
-      useEffect(function () {
-        return function () { if (busyTimerRef.current) clearTimeout(busyTimerRef.current); };
-      }, []);
-      useEffect(function () {
         var onPause = function (event) {
           var until = (event && event.detail && event.detail.until) || 0;
-          // 本模块可能是另一个实例发出的暂停事件，必须先同步共享状态。
           pausedUntil = until > Date.now() ? until : 0;
-          if (until > Date.now()) {
-            armed.current = false;
-            if (abortRef.current) abortRef.current.abort();
-            endBusy();
-            setSuggestion("");
-            setTruncated(false);
-          } else {
-            armed.current = true;
-            setDraftTick(function (n) { return n + 1; });
-          }
+          if (pausedUntil) resetSuggestion();
+          armed.current = true;
+          bumpEditor();
         };
         var onFail = function (event) { setFailure(event && event.detail ? event.detail : failState); };
         var onTheme = function () { setThemeTick(function (n) { return n + 1; }); };
+        window.addEventListener("dsh-prompt-predict:settings", changed);
         window.addEventListener("dsh-prompt-predict:pause", onPause);
         window.addEventListener("dsh-prompt-predict:fail", onFail);
         window.addEventListener("dsh-prompt-predict:theme", onTheme);
+        var timer = setInterval(function () { setPauseNow(Date.now()); }, 15000);
         return function () {
+          clearInterval(timer);
+          window.removeEventListener("dsh-prompt-predict:settings", changed);
           window.removeEventListener("dsh-prompt-predict:pause", onPause);
           window.removeEventListener("dsh-prompt-predict:fail", onFail);
           window.removeEventListener("dsh-prompt-predict:theme", onTheme);
         };
       }, []);
 
-      // 因为「有草稿就不预测」会直接 return，草稿被清空后需要重新触发一次。
-      // rc.2 没有 draft 可订阅，只能监听编辑器的输入事件，发现变空就 bump 一下。
+      // 粘贴兜底不影响默认行为；所有异步回调都随本会话编辑器的监听生命周期失效。
       useEffect(function () {
-        var ed = findEditor(sessionId);
-        if (!ed || typeof ed.addEventListener !== "function") return;
-        // keyup 只用于兜底判断「草稿被清空」，不能把方向键、Tab、Esc 等
-        // 也算成「用户在输入」——否则我们自己的 ↓ keyup 会把结果误丢弃。
-        var isTypingEvent = function (event) {
-          if (!event || event.type !== "keyup") return true;
-          var k = event.key;
-          if (typeof k !== "string") return false;
-          return k.length === 1 || k === "Backspace" || k === "Delete" || k === "Enter";
+        var active = true;
+        var stillHere = function () { return active && sessionRef.current === sessionId; };
+        var fallbackInsert = function (text) {
+          var actions = actionsRef.current;
+          if (!actions) return false;
+          try { return actions.insertText(text, actions.captureInsertion()); } catch { return false; }
         };
-        var onInput = function (event) {
-          if (!isTypingEvent(event)) return;
-          if (Date.now() - selfInsertAt.current < 150) return;   // 我们自己插入的内容
-          typedDuringRequest.current = true;
-          if (!editorText(sessionId)) typedSince.current = false;   // 草稿删空 → 允许建议重新浮现
-          var hasAttach = editorHasAttachments(sessionId);
-          if (hasAttach || hadAttachmentsRef.current) setSuggestion("");   // 附件出现或刚被删除
-          hadAttachmentsRef.current = hasAttach;
-          setTypedTick(function (n) { return n + 1; });     // 只触发渲染，让 DOM 守卫隐藏 ghost
-          if (Date.now() < suppressPredictionUntil.current) return;   // 刚粘贴过，别自动换建议
-          if (!armed.current) return;                       // 已经预测过 / 正在预测
-          if (hasForeignDraft(sessionId)) return;  // 还有草稿
-          setDraftTick(function (n) { return n + 1; });
+        var onPasteKey = function (event) {
+          if (!stillHere() || event.isComposing || !isComposerFocused(sessionId, event)) return;
+          if (!(event.ctrlKey || event.metaKey) || event.altKey || !/^[vV]$/.test(event.key)) return;
+          maskPaste();
+          if (!actionsRef.current) return;
+          var before = editorText(sessionId);
+          setTimeout(function () {
+            if (!stillHere() || editorText(sessionId) !== before) return;
+            try {
+              if (!navigator.clipboard || !navigator.clipboard.readText) return;
+              navigator.clipboard.readText().then(function (text) {
+                if (!text || !stillHere() || editorText(sessionId) !== before) return;
+                if (fallbackInsert(text)) return;
+                setTimeout(function () {
+                  if (!stillHere() || editorText(sessionId) !== before) return;
+                  try {
+                    if (document.execCommand) document.execCommand("insertText", false, text);
+                  } catch { /* 忽略 */ }
+                }, 120);
+              }).catch(function () { /* Electron 读不到剪贴板时保持安静 */ });
+            } catch { /* 忽略 */ }
+          }, 180);
         };
-        var types = ["input", "keyup", "compositionend", "drop"];
-        types.forEach(function (type) { ed.addEventListener(type, onInput, true); });
+        var onPaste = function (event) {
+          if (!stillHere() || !isComposerFocused(sessionId, event)) return;
+          var data = event.clipboardData;
+          var files = data && data.files;
+          var items = data && data.items;
+          if ((files && files.length) || (items && Array.prototype.some.call(items, function (item) { return item && item.kind === "file"; }))) {
+            maskPaste();
+            return;
+          }
+          var text = data && typeof data.getData === "function" ? data.getData("text/plain") : "";
+          if (!text) return;
+          maskPaste();
+          var before = editorText(sessionId);
+          setTimeout(function () {
+            if (stillHere() && editorText(sessionId) === before) fallbackInsert(text);
+          }, 60);
+        };
+        var onDrop = function (event) {
+          if (stillHere() && isComposerFocused(sessionId, event)) maskPaste();
+        };
+        var onInsert = function (event) {
+          var text = event && event.detail && event.detail.text;
+          if (stillHere() && typeof text === "string" && text && fallbackInsert(text)) maskPaste();
+        };
+        var target = typeof document.addEventListener === "function" ? document : window;
+        target.addEventListener("keydown", onPasteKey, true);
+        target.addEventListener("paste", onPaste, true);
+        target.addEventListener("drop", onDrop, true);
+        window.addEventListener("dsh-prompt-predict:insert", onInsert);
         return function () {
-          types.forEach(function (type) { ed.removeEventListener(type, onInput, true); });
+          active = false;
+          target.removeEventListener("keydown", onPasteKey, true);
+          target.removeEventListener("paste", onPaste, true);
+          target.removeEventListener("drop", onDrop, true);
+          window.removeEventListener("dsh-prompt-predict:insert", onInsert);
         };
-      }, [sessionId]);
+      }, [sessionId, unavailable]);
+
+      // 输入、DOM 变化、IME 只切换显示条件，不动同轮候选，也不取消已开始的请求。
+      useEffect(function () {
+        if (unavailable) return;
+        var active = true;
+        var stillHere = function () { return active && sessionRef.current === sessionId; };
+        var ed = findEditor(sessionId);
+        var scope = ed && (findComposerScope(sessionId) || ed);
+        var trackDraft = function (event) {
+          var hasText = Boolean(editorText(sessionId));
+          var hasAttach = editorHasAttachments(sessionId);
+          var deletion = event && (/^delete/.test(event.inputType || "") || /^(Backspace|Delete)$/.test(event.key));
+          if (hasText || seenDomDraft.current || deletion) typedSince.current = false;
+          else if (event && event.type === "input" && !hasAttach && !seenDomAttachments.current && !isComposingNow()) typedSince.current = true;
+          if (hasText || seenDomDraft.current || hasAttach || seenDomAttachments.current) pasteMask.current = null;
+          seenDomDraft.current = hasText;
+          seenDomAttachments.current = hasAttach;
+        };
+        trackDraft();
+        var isAttachmentNode = function (node) {
+          if (!node || node.nodeType !== 1) return false;
+          var selector = 'img, picture, video, canvas, [data-attachment], [data-file], [data-image], [data-lexical-decorator]';
+          try {
+            return (typeof node.matches === "function" && node.matches(selector))
+              || (typeof node.querySelector === "function" && node.querySelector(selector + ', [contenteditable="false"]'));
+          } catch { return false; }
+        };
+        var observer;
+        if (scope && typeof MutationObserver !== "undefined") {
+          observer = new MutationObserver(function (mutations) {
+            if (!stillHere()) return;
+            var added = mutations.some(function (m) { return Array.from(m.addedNodes || []).some(isAttachmentNode); });
+            var removedAttach = mutations.some(function (m) { return Array.from(m.removedNodes || []).some(isAttachmentNode); });
+            if (removedAttach && !editorHasAttachments(sessionId)) pasteMask.current = null;
+            trackDraft();
+            if (added && !seenDomAttachments.current) maskPaste();
+            else bumpEditor();
+          });
+          observer.observe(scope, { childList: true, subtree: true, characterData: true });
+          var outer = scope.parentElement;
+          if (outer && outer !== document.body) observer.observe(outer, { childList: true, subtree: true, characterData: true });
+        }
+        var onInput = function (event) {
+          if (!stillHere()) return;
+          if (event.type === "keyup" && !/^(Backspace|Delete|Enter)$/.test(event.key)) return;
+          trackDraft(event);
+          bumpEditor();
+        };
+        var onStart = function () {
+          if (!stillHere() || isComposingNow()) return;
+          // 合成期焦点可能暂时落在 Lexical 的隐藏节点上；先遮住，再判断结束时的内容。
+          composingRef.current = true;
+          composingAt.current = Date.now();
+          composingInComposer.current = isComposerFocused(sessionId);
+          bumpEditor();
+        };
+        var onEnd = function (event) {
+          if (!stillHere() || !composingRef.current) return;
+          composingRef.current = false;
+          if (composingInComposer.current || isComposerFocused(sessionId, event)) {
+            trackDraft();
+            // DOM 可能读不到已经提交的合成正文；取消时没有 data，允许原建议回来。
+            if (event.data && !seenDomDraft.current) typedSince.current = true;
+          }
+          bumpEditor();
+        };
+        window.addEventListener("compositionstart", onStart, true);
+        window.addEventListener("compositionend", onEnd, true);
+        if (ed && typeof ed.addEventListener === "function") {
+          ed.addEventListener("input", onInput, true);
+          ed.addEventListener("keyup", onInput, true);
+          ed.addEventListener("compositionstart", onStart, true);
+          ed.addEventListener("compositionend", onEnd, true);
+        }
+        return function () {
+          active = false;
+          if (observer) observer.disconnect();
+          window.removeEventListener("compositionstart", onStart, true);
+          window.removeEventListener("compositionend", onEnd, true);
+          if (ed && typeof ed.removeEventListener === "function") {
+            ed.removeEventListener("input", onInput, true);
+            ed.removeEventListener("keyup", onInput, true);
+            ed.removeEventListener("compositionstart", onStart, true);
+            ed.removeEventListener("compositionend", onEnd, true);
+          }
+        };
+      }, [sessionId, unavailable]);
 
       var accept = useCallback(function () {
-        if (busyState || !visibleSuggestion || dismissedByDraft.current) return false;
+        if (!isVisible(selected)) return false;
+        var text = selected.suggestion.trim();
         try {
           var editor = findEditor(sessionId);
           var focused = document.activeElement;
-          // 会话切换后 findEditor 可能短暂指向旧编辑器；焦点所在的 contenteditable 优先。
+          if (isOtherSession(sessionId, focused) || isOtherSession(sessionId, editor)) return false;
+          // 切换后 findEditor 可能短暂指向旧节点；未标记为其它会话的焦点 contenteditable 优先。
           if (focused && focused.isContentEditable
-            && (!editor || (editor !== focused && editor.contains && !editor.contains(focused)))) {
-            editor = focused;
+            && (!editor || (editor !== focused && editor.contains && !editor.contains(focused)))) editor = focused;
+          if (editor && !(editor === focused || (editor.contains && editor.contains(focused)))) {
+            try { editor.focus(); } catch { /* 聚焦失败仍尝试插入 */ }
           }
-          // 主题可能把焦点放在 composer 外层容器/body：先把焦点放回编辑器再接管选区。
-          if (editor) {
-            var active = document.activeElement;
-            if (!(editor === active || (editor.contains && editor.contains(active)))) {
-              try { editor.focus(); } catch { /* 聚焦失败仍尝试插入 */ }
-            }
-          }
-          var inserted = false;
-          if (inputActions) {
-            var span = inputActions.captureInsertion();
-            selfInsertAt.current = Date.now();
-            inserted = inputActions.insertText(visibleSuggestion, span);
-          }
+          var inserted = inputActions && inputActions.insertText(text, inputActions.captureInsertion());
           if (!inserted && editor) {
-            // 主题自带的 Lexical 插入失败时，退到浏览器原生命令再试一次。
             try { editor.focus(); } catch { /* 忽略 */ }
-            try { inserted = document.execCommand("insertText", false, visibleSuggestion); } catch { inserted = false; }
+            try { inserted = document.execCommand("insertText", false, text); } catch { inserted = false; }
           }
           if (!inserted) return false;
-          patchLastRun(sessionId, { suggestion: suggestion, accepted: true });
-          suggestionHistoryRef.current = [];
-          historyIndexRef.current = 0;
-          switchCountRef.current = 0;
-          setSwitchNotice("");
-          setSuggestion("");
+          var last = readStoredHistory().find(function (item) { return item.sessionId === sessionId; });
+          // 恢复缓存不新增记录，也不要把别轮的历史（或设置试跑）误标为已采纳。
+          if (last && suggestionHistoryRef.current.some(function (entry) { return entry.suggestion.trim() === last.suggestion; })) {
+            patchLastRun(sessionId, { suggestion: text, truncated: selected.truncated, accepted: true });
+          }
+          dismiss(selected);
           return true;
         } catch { return false; }
-      }, [visibleSuggestion, inputActions, draft, busyState, suggestion, sessionId]);
+      }, [selected, inputActions, sessionId, unavailable]);
 
-      // 换一条：把当前这条作为 avoid 传回去，让模型必须给出不同的建议
-      // 统一的请求入口：手动触发、reroll 都走这里（自动触发仍带 350ms 防抖）。
-      var runRequest = function (isReroll, immediate) {
-        if (!sessionId || (isReroll && !suggestion)) return false;
-        var controller = new AbortController();
-        abortRef.current = controller;
-        var finished = false;
-        var onEvent = function (event) {
-          if (event && (event.type === "done" || event.type === "error")) finished = true;
-          applySuggestionEvent(event, isReroll, true);
-        };
-        typedDuringRequest.current = false;
-        var body = isReroll ? { sessionId: sessionId, reroll: true, avoid: suggestion } : { sessionId: sessionId };
-        if (isReroll) {
-          // 换一条：清掉旧的剩余部分；已逐段采纳的前缀保留，只重新生成后面的
-          setSuggestion("");
-        }
-        beginBusy(Boolean(isReroll || immediate));
-        apiStream("suggest", body, onEvent, controller.signal)
-          .then(function (result) {
-            if (!finished && result) {
-              applySuggestionEvent(result.ok
-                ? Object.assign({ type: "done" }, result)
-                : Object.assign({ type: "error" }, result), isReroll, true);
-            }
-          })
-          .catch(function (error) {
-            endBusy();
-            if (controller.signal.aborted) return;
-            setSuggestion("");
-            setTruncated(false);
-            setManualError(String(error));
-            setManualErrorKind("failed");
-            noteFailure(sessionId, String(error));
-            recordRun(sessionId, null, String(error), sessionTitle);
-          });
-        return true;
-      };
-      var reroll = function () {
-        if (!switchEnabled) return;
-        var limit = switchLimitRef.current;
-        if (limit > 0 && switchCountRef.current >= limit) {
-          setSwitchNotice(tt(t, "dock.switchLimit", { limit: limit }));
-          return;
-        }
-        runRequest(true);
-      };
-
-      // 全局 Tab 控制器：只登记当前可见建议；组件重挂/会话切换不会留下旧闭包。
-      useEffect(function () {
+      // 全局 Tab 和按钮使用同一条采纳路径；注册对象不持有其他会话的候选。
+      useLayoutEffect(function () {
         if (!visibleSuggestion) return;
         var controller = {
-          canAccept: function (event) { return canAcceptTabEverywhere(sessionId, event); },
-          accept: function () { return accept(); },
+          canAccept: function (event) { return isVisible(selected) && canAcceptTabEverywhere(sessionId, event); },
+          accept: accept,
         };
         window.__dshPromptPredictTabAccept = controller;
         return function () {
@@ -2427,117 +2303,114 @@ window.__ModuleLoader__.load({
         };
       }, [visibleSuggestion, accept, sessionId]);
 
-      useEffect(function () {
-        if (!visibleSuggestion) return;
-        var onKey = function (event) {
-          if (event.isComposing) return;
-          if (!isComposerFocused(sessionId, event)) return;
-          if (event.key === "ArrowUp" && switchEnabled && visibleSuggestion) {
-            var hist = suggestionHistoryRef.current;
-            if (historyIndexRef.current > 0) {
-              historyIndexRef.current -= 1;
-              setSuggestion(hist[historyIndexRef.current]);
-              setSwitchNotice("");
-              event.preventDefault();
-              event.stopPropagation();
-              return;
-            }
-          }
-          if (event.key === "Escape") { event.preventDefault(); setSuggestion(""); suggestionHistoryRef.current = []; historyIndexRef.current = 0; switchCountRef.current = 0; setSwitchNotice(""); return; }
-          // 任何可打印字符 → 认定用户开始输入，隐藏建议（与「开始输入自动消失」一致）
-          if (!typedSince.current && typeof event.key === "string" && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      // 流式半句的上一条是刚才最后选中的完整候选，而不是再往前一条。
+      var prevIndex = historyIndexRef.current - (requestRef.current ? 0 : 1);
+      keyHandlers.current = {
+        down: function (event) {
+          if (!event || !/^(ArrowDown|Down)$/.test(event.key) || event.isComposing) return;
+          if (event.code && event.code !== "ArrowDown" && event.code !== "Down") return;
+          if (!canSuggest() || hasDraft() || !isComposerFocused(sessionId, event)) return;
+          if (event.type === "keyup" && Date.now() - lastReplaceAt.current < 400) return;
+          if (isVisible(selected)) {
+            if (!switchEnabled) return;
+            if (historyIndexRef.current < suggestionHistoryRef.current.length - 1) selectHistory(historyIndexRef.current + 1);
+            else reroll();
+          } else if (requestRef.current && requestRef.current.started) {
+            setBusyState(function (prev) { return prev ? { visible: true } : prev; });
+          } else if (!switchEnabled || !runRequest(false, true, true)) return;
+          lastReplaceAt.current = Date.now();
+          event.preventDefault();
+          event.stopPropagation();
+          if (typeof event.stopImmediatePropagation === "function") event.stopImmediatePropagation();
+        },
+        other: function (event) {
+          if (event.isComposing || !canSuggest() || isComposingNow() || !isComposerFocused(sessionId, event)) return;
+          var visible = isVisible(selected);
+          if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey && (event.key === " " || event.code === "Space")) {
+            if (runRequest(visible, true)) { event.preventDefault(); event.stopPropagation(); }
+          } else if (visible && event.key === "ArrowUp" && switchEnabled && suggestionHistoryRef.current[prevIndex]) {
+            selectHistory(prevIndex);
+            event.preventDefault();
+            event.stopPropagation();
+          } else if (visible && event.key === "Escape") {
+            event.preventDefault();
+            dismiss(selected);
+          } else if (typeof event.key === "string" && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            // rc.2 的编辑器有时读不到文字；即使在请求没完成时，也先记录用户开始输入。
             typedSince.current = true;
-            typedDuringRequest.current = true;
-            setTypedTick(function (n) { return n + 1; });
+            bumpEditor();
+          }
+        },
+      };
+      useEffect(function () {
+        if (unavailable) return;
+        var onForward = function (event) { keyHandlers.current.down(event && event.detail && event.detail.native); };
+        var onEditorKey = function (event) { keyHandlers.current.down(event); };
+        var onKey = function (event) { keyHandlers.current.other(event); };
+        var ed = findEditor(sessionId);
+        window.addEventListener("dsh-prompt-predict:down", onForward);
+        window.addEventListener("keydown", onKey, true);
+        if (ed && typeof ed.addEventListener === "function") {
+          ed.addEventListener("keydown", onEditorKey, true);
+          ed.addEventListener("keyup", onEditorKey, true);
+        }
+        return function () {
+          window.removeEventListener("dsh-prompt-predict:down", onForward);
+          window.removeEventListener("keydown", onKey, true);
+          if (ed && typeof ed.removeEventListener === "function") {
+            ed.removeEventListener("keydown", onEditorKey, true);
+            ed.removeEventListener("keyup", onEditorKey, true);
           }
         };
-        // 除了可打印键，粘贴 / 输入法合成 / 任何文本输入 / 拖拽落字 也算「用户开始输入」。
-        // 只监听 keydown 的话，中文输入法（key=Process）和 Cmd+V 都躲得过去，灰字会压在正文上。
-        var hideOnInput = function () {
-          typedDuringRequest.current = true;
-          if (typedSince.current) return;
-          typedSince.current = true;
-          setTypedTick(function (n) { return n + 1; });
-        };
-        var editor = findEditor(sessionId);
-        var inputTarget = editor || window;
-        // 不监听 paste：任何 capture 阶段的 paste 监听都可能与编辑器的粘贴处理互相干扰，
-        // beforeinput/input 已经能可靠地识别粘贴。
-        var inputEvents = ["compositionstart", "drop"];
-        inputEvents.forEach(function (type) { inputTarget.addEventListener(type, hideOnInput, true); });
-        window.addEventListener("keydown", onKey, true);
-        return function () {
-          inputEvents.forEach(function (type) { inputTarget.removeEventListener(type, hideOnInput, true); });
-          window.removeEventListener("keydown", onKey, true);
-        };
-      }, [visibleSuggestion, accept, switchEnabled, sessionId]);
+      }, [sessionId, unavailable]);
 
-      // 建议直接以灰色 ghost text 覆盖在 Lexical 输入框首字符处。
-      if (!enabled) return null;
-      var dockBody;
-      if (busyState && busyState.visible && !visibleSuggestion && !foreignDraftNow && !composingNow) {
-        dockBody = h(GhostOverlay, {
-          suggestion: tt(t, "dock.generatingAny"),
-          busy: true, sessionId: sessionId, t: t,
-        });
-      } else if (!visibleSuggestion) {
-        // 连续两次失败才提示，避免偶发超时刷屏；用户开始输入就不再打扰
-        if (failure && failure.streak >= 2 && failure.sessionId === sessionId && !typedSince.current && !hasForeignDraft(sessionId)) {
-          dockBody = h(ComposerHint, {
-            sessionId: sessionId,
-            below: true,
-            text: tt(t, "dock.failureHint", { reason: String(failure.reason || "").slice(0, 80) }),
-            t: t,
-            actionLabel: findSettingsOpener()
-              ? tt(t, "dock.openSettings")
-              : tt(t, "dock.copySettingsPath"),
-            onAction: openSettingsFromHint,
-          });
-        } else {
-          dockBody = null;
-        }
-      } else if (dismissedByDraft.current || hasForeignDraft(sessionId)) {
-        dockBody = null;
-      } else {
-        // 回到覆盖层：它在真实环境里是可见的（dock 内联行实测看不见）。
-        // 「打字即隐藏」由上面的 typedSince 信号负责，不再依赖草稿状态。
-        var histNow = suggestionHistoryRef.current;
-        var canPrev = switchEnabled && historyIndexRef.current > 0;
-        var nextAction = !switchEnabled ? "off" : (historyIndexRef.current < histNow.length - 1 ? "next" : "regen");
-        dockBody = h(GhostOverlay, {
-          suggestion: visibleSuggestion,
-          sessionId: sessionId,
-          truncated: truncated,
-          onAccept: accept,
-          onReroll: switchEnabled ? reroll : null,
-          switchEnabled: switchEnabled,
-          minimalDisplay: minimalDisplay,
-          canPrev: canPrev,
-          nextAction: nextAction,
-          notice: switchNotice,
-          t: t,
-        });
+      // 失败提示的「打开设置」：优先宿主导航，没有就复制路径。
+      function findSettingsOpener() {
+        var fns = [props.openSettings, props.openSettingsPanel, props.openOptions,
+          props.host && props.host.openSettings, window.dsh && window.dsh.openSettings,
+          window.__DSH__ && window.__DSH__.openSettings];
+        for (var i = 0; i < fns.length; i += 1) if (typeof fns[i] === "function") return fns[i];
+        return null;
       }
-      // 手动换一条失败：立刻说明原因，不要等「连续两次失败」。
-      if (!dockBody && manualError) {
-        dockBody = h(ComposerHint, {
-          sessionId: sessionId,
-          below: true,
-          text: manualErrorKind === "discarded"
-            ? String(manualError).slice(0, 120)
-            : tt(t, "dock.manualFailed", { reason: String(manualError).slice(0, 120) }),
-          t: t,
-          actionLabel: findSettingsOpener()
-            ? tt(t, "dock.openSettings")
-            : tt(t, "dock.copySettingsPath"),
+      function openSettingsFromHint() {
+        var opener = findSettingsOpener();
+        if (opener) {
+          try { opener(); return; } catch { /* 回退到复制路径 */ }
+        }
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tt(t, "dock.settingsPath"));
+        } catch { /* 忽略剪贴板失败 */ }
+      }
+      function failureHint(text) {
+        return h(ComposerHint, {
+          sessionId: sessionId, below: true, text: text, t: t,
+          actionLabel: tt(t, findSettingsOpener() ? "dock.openSettings" : "dock.copySettingsPath"),
           onAction: openSettingsFromHint,
         });
       }
-      // 暂停时的常驻提示：否则用户会以为插件坏了
-      if (!dockBody && pausedUntil > pauseNow) {
-        dockBody = h(ComposerHint, { sessionId: sessionId, below: true, text: tt(t, "dock.paused", { time: formatLeft(pausedUntil - pauseNow) }), t: t });
+      if (!enabled || unavailable || sessionRef.current !== sessionId) return null;
+      if (pausedUntil > pauseNow) {
+        return h(ComposerHint, { sessionId: sessionId, below: true, text: tt(t, "dock.paused", { time: formatLeft(pausedUntil - pauseNow) }), t: t });
       }
-      return dockBody;
+      if (draftHidden) return null;
+      if (visibleSuggestion) {
+        return h(GhostOverlay, {
+          suggestion: visibleSuggestion, sessionId: sessionId, truncated: selected.truncated,
+          onAccept: accept, onReroll: switchEnabled ? reroll : null, switchEnabled: switchEnabled,
+          minimalDisplay: minimalDisplay, canPrev: switchEnabled && Boolean(suggestionHistoryRef.current[prevIndex]),
+          nextAction: !switchEnabled ? "off" : (historyIndexRef.current < suggestionHistoryRef.current.length - 1 ? "next" : "regen"),
+          notice: switchNotice, t: t,
+        });
+      }
+      if (busyState && busyState.visible) {
+        return h(GhostOverlay, { suggestion: tt(t, "dock.generatingAny"), busy: true, sessionId: sessionId, t: t });
+      }
+      if (switchNotice) return h(ComposerHint, { sessionId: sessionId, below: true, text: switchNotice, t: t });
+      if (manualError) return failureHint(tt(t, "dock.manualFailed", { reason: String(manualError).slice(0, 120) }));
+      if (showFailure.current && failure && failure.streak >= 2 && failure.sessionId === sessionId) {
+        return failureHint(tt(t, "dock.failureHint", { reason: String(failure.reason || "").slice(0, 80) }));
+      }
+      return null;
     }
 
     // 模型能力查询带 5 分钟缓存：设置页每次打开/保存都重查的话，provider 慢时会反复卡 3.5 秒超时。
@@ -2583,7 +2456,6 @@ window.__ModuleLoader__.load({
       var _busy = useState(false), busy = _busy[0], setBusy = _busy[1];
       var _msg = useState(null), msg = _msg[0], setMsg = _msg[1];
       var _adv = useState(false), adv = _adv[0], setAdv = _adv[1];
-      var _dirty = useState(false), dirty = _dirty[0], setDirty = _dirty[1];
       var _try = useState(null), tryResult = _try[0], setTryResult = _try[1];
       var _copied = useState(""), copiedKey = _copied[0], setCopiedKey = _copied[1];
       var _ik = useState(""), insertedKey = _ik[0], setInsertedKey = _ik[1];
@@ -2592,6 +2464,7 @@ window.__ModuleLoader__.load({
       var _ver = useState(null), pluginVersion = _ver[0], setPluginVersion = _ver[1];
       var _upd = useState(""), updateState = _upd[0], setUpdateState = _upd[1];   // "" | "checking"
       var _updInfo = useState(null), updateInfo = _updInfo[0], setUpdateInfo = _updInfo[1];
+      var _updOpen = useState(false), updateOpen = _updOpen[0], setUpdateOpen = _updOpen[1];
       var _aue = useState(false), autoUpdateError = _aue[0], setAutoUpdateError = _aue[1];
       var _undo = useState(null), undoSnapshot = _undo[0], setUndoSnapshot = _undo[1];   // 清空后可撤销的快照
 
@@ -2709,7 +2582,6 @@ window.__ModuleLoader__.load({
           var stored = trimHistoryToLimit(historyLimit);
           setHistory(stored);
           setEffort(eff.reasoningEffort || "off");
-          setDirty(false);
         }).catch(function () { });
         api("catalog").then(function (j) {
           if (j && j.ok) { setCat(j.groups || []); setCatalogError(""); }
@@ -2773,45 +2645,40 @@ window.__ModuleLoader__.load({
         return g && Array.isArray(g.models) ? g.models : [];
       }
 
-      function save() {
-        // 只改显示偏好时，不重新提交或校验原先选择的模型和思考档位。
-        var patch = dirty ? {
-          provider: provider, model: model,
-          timeoutMs: timeoutSec * 1000,
-          maxMessages: ctxSize,
-          maxChars: maxChars,
-          outputChars: outputChars,
-          multilineSuggestions: multiline,
-          switchEnabled: switchEnabled,
-          switchLimit: switchLimit,
-          historySize: historySize,
-          suggestionLanguage: suggestionLanguage,
-          reasoningEffort: effort,
-        } : {};
-        if (minimalDisplayChanged) patch.minimalDisplay = minimalDisplay;
-        setBusy(true); setMsg(null);
-        api("settings", patch).then(function (j) {
-          if (j && j.ok) {
-            if (dirty) trimHistoryToLimit(historySize);
-            if (j.effective) {
-              setSt(Object.assign({}, st, { effective: j.effective }));
-              setMinimalDisplay(j.effective.minimalDisplay === true);
+      // 每次改动只提交变化的那几个字段：Host 的 /settings 是增量 patch，
+      // 提交整表单会连带重新校验用户根本没碰过的模型/档位。
+      var patchQueue = Promise.resolve();
+      function applyPatch(fields, opts) {
+        var options = opts || {};
+        var patch = {};
+        Object.keys(fields).forEach(function (key) { patch[key] = fields[key]; });
+        if (!Object.keys(patch).length) return Promise.resolve(true);
+        // 连续点击/拖数字时串行化：后一次基于前一次的结果，避免旧响应覆盖新状态。
+        var run = patchQueue.then(function () {
+          return api("settings", patch).then(function (j) {
+            if (j && j.ok) {
+              if (j.effective) setSt(Object.assign({}, st, { effective: j.effective }));
+              notifySettings(j.effective);
+              if (Object.prototype.hasOwnProperty.call(patch, "historySize")) trimHistoryToLimit(patch.historySize);
+              if (!options.quiet) setMsg({ ok: true, text: tt(t, "settings.saved") });
+              return true;
             }
-            notifySettings(j.effective);
-            setMsg({ ok: true, text: tt(t, "settings.saved") });
-            setDirty(false);
-            loadAll();
-          } else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
-        }).catch(function (e) { setMsg({ ok: false, text: String(e) }); })
-          .finally(function () { setBusy(false); });
+            setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.saveFailed") });
+            return false;
+          }).catch(function (e) {
+            setMsg({ ok: false, text: String(e) });
+            return false;
+          });
+        });
+        patchQueue = run.catch(function () { return false; });
+        return run;
       }
+
       function toggleEnabled(on) {
-        setBusy(true); setMsg(null);
-        api("settings", { enabled: on }).then(function (j) {
-          if (j && j.ok) { notifySettings(j.effective); setSt(Object.assign({}, st, { effective: j.effective })); loadAll(); setMsg({ ok: true, text: on ? tt(t, "settings.enabled") : tt(t, "settings.disabled") }); }
-          else setMsg({ ok: false, text: (j && j.reason) || tt(t, "settings.actionFailed") });
-        }).catch(function (e) { setMsg({ ok: false, text: String(e) }); })
-          .finally(function () { setBusy(false); });
+        setMsg(null);
+        applyPatch({ enabled: on }).then(function (ok) {
+          if (ok) setMsg({ ok: true, text: on ? tt(t, "settings.enabled") : tt(t, "settings.disabled") });
+        });
       }
       // 「试一下」：直接打 /suggest，走的是和 composer 完全相同的链路（模型路由、语言、字数、
       // 截断重试都包含），所以能用来确认设置到底生效没有。
@@ -2853,79 +2720,103 @@ window.__ModuleLoader__.load({
       if (!st) return h("div", { style: SS.card, dir: "auto" }, h("p", { style: SS.muted }, tt(t, "settings.loading")));
       var eff = st.effective || {};
       var enabled = eff.enabled !== false;
-      var minimalDisplayChanged = minimalDisplay !== (eff.minimalDisplay === true);
       var minimalDisplayHintId = "dsh-prompt-predict-minimal-display-hint";
-      var saveDisabled = busy || (!dirty && !minimalDisplayChanged);
+      var historyCount = history.length;
 
       return h("div", { style: SS.card, dir: "auto" },
-        h("p", { style: SS.title },
-          tt(t, "settings.title"),
+        // 标题行：名称 + 版本 + 检查更新（更新信息默认收成一行摘要）
+        h("div", { style: { display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: 8 } },
+          h("span", { style: SS.title }, tt(t, "settings.title")),
           pluginVersion
             ? h("span", { style: SS.version, "data-prompt-predict-version": "true" }, "v" + pluginVersion)
             : null,
           h("button", {
             type: "button",
-            style: Object.assign({}, SS.linkBtn, { marginInlineStart: 8 }),
+            style: SS.linkBtn,
             "data-prompt-predict-update-check": "true",
-            disabled: updateState === "checking" || busy || !pluginVersion,   // 版本号未加载前禁用，避免误报
+            disabled: updateState === "checking" || busy || !pluginVersion,
             onClick: checkUpdate,
           }, updateState === "checking" ? tt(t, "settings.updateChecking") : tt(t, "settings.checkUpdate"))),
+        // 说明与快捷键压成一行；点任一设置即时生效，不再需要底部保存按钮
+        h("p", { style: SS.subline, "data-prompt-predict-shortcuts": "true" }, tt(t, "settings.shortcutsLine")),
+
         autoUpdateError && !updateInfo
           ? h("p", { style: SS.muted, "data-prompt-predict-update-auto-error": "true" }, tt(t, "settings.updateAutoFailed"))
           : null,
         updateInfo
-          ? h("p", { style: SS.muted, "data-prompt-predict-update-info": "true" },
+          ? h("div", { "data-prompt-predict-update-info": "true", style: SS.summaryRow },
             updateInfo.status === "found"
-              ? h("span", null,
-                h("span", null, tt(t, "settings.updateFound", { version: updateInfo.version })),
-                pluginPageOpener
-                  ? h("button", {
-                    type: "button",
-                    style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6, fontWeight: 600 }),
-                    "data-prompt-predict-open-plugins": "true",
-                    onClick: pluginPageOpener,
-                  }, tt(t, "settings.updateOpenPlugins"))
-                  : null,
-                h("button", {
-                  type: "button",
-                  style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
-                  "data-prompt-predict-update-copy": "true",
-                  onClick: function () { copySuggestion("update-cmd", "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version); },
-                }, copiedKey === "update-cmd" ? tt(t, "settings.updateCopied") : tt(t, "settings.updateCopy")),
-                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updatePluginsHint")),
-                h("span", { style: { display: "block" } },
-                  tt(t, "settings.updateCommand", { command: "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version })),
-                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updateStep1")),
-                h("span", { style: { display: "block", fontSize: 12 } }, tt(t, "settings.updateStep2")),
-                h("span", { style: { display: "block", fontSize: 12 } }, tt(t, "settings.updateStep3")),
-                h("span", { style: { display: "block", fontSize: 12, marginTop: 2 } }, tt(t, "settings.updateOtherEnv")))
-              : updateInfo.status === "latest"
-                ? tt(t, "settings.updateLatest")
-                : tt(t, "settings.updateError"))
+              ? h("span", { style: SS.summaryText },
+                // 摘要一行常显；命令与按钮只在展开后追加
+                (function () {
+                  var kids = [h("span", { key: "sum" }, tt(t, "settings.updateSummary", { version: updateInfo.version }))];
+                  if (!updateOpen) return kids;
+                  kids.push(h("span", { key: "cmd", style: { display: "block", fontSize: 11.5, marginTop: 2 } },
+                    tt(t, "settings.updateCommand", { command: "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version })));
+                  if (pluginPageOpener) {
+                    kids.push(h("button", {
+                      key: "open", type: "button",
+                      style: Object.assign({}, SS.linkBtn, { marginInlineStart: 0 }),
+                      "data-prompt-predict-open-plugins": "true",
+                      onClick: pluginPageOpener,
+                    }, tt(t, "settings.updateOpenPlugins")));
+                  }
+                  kids.push(h("span", { key: "s1", style: { display: "block", fontSize: 11.5, marginTop: 2 } }, tt(t, "settings.updateStep1")));
+                  kids.push(h("span", { key: "s2", style: { display: "block", fontSize: 11.5 } }, tt(t, "settings.updateStep2")));
+                  kids.push(h("span", { key: "s3", style: { display: "block", fontSize: 11.5 } }, tt(t, "settings.updateStep3")));
+                  kids.push(h("span", { key: "s4", style: { display: "block", fontSize: 11.5, marginTop: 2 } }, tt(t, "settings.updateOtherEnv")));
+                  kids.push(h("button", {
+                    key: "copy", type: "button",
+                    style: Object.assign({}, SS.linkBtn, { marginInlineStart: 6 }),
+                    "data-prompt-predict-update-copy": "true",
+                    onClick: function () { copySuggestion("update-cmd", "dsh plugin --profile " + currentProfileName() + " add dsh-prompt-predict@" + updateInfo.version); },
+                  }, copiedKey === "update-cmd" ? tt(t, "settings.updateCopied") : tt(t, "settings.updateCopy")));
+                  return kids;
+                })())
+              : h("span", { style: SS.summaryText },
+                updateInfo.status === "latest" ? tt(t, "settings.updateLatest") : tt(t, "settings.updateError")),
+            updateInfo.status === "found"
+              ? h("button", {
+                type: "button", style: SS.histToggle, "data-prompt-predict-update-toggle": "true",
+                "aria-expanded": updateOpen,
+                onClick: function () { setUpdateOpen(!updateOpen); },
+              }, (updateOpen ? "▾ " : "▸ ") + tt(t, updateOpen ? "settings.historyCollapse" : "settings.historyExpand"))
+              : null)
           : null,
-        h("p", { style: SS.muted }, tt(t, "settings.desc")),
-        h("p", {
-          style: Object.assign({}, SS.muted, { fontWeight: 600 }),
-          "data-prompt-predict-save-hint": "true",
-        }, tt(t, "settings.saveHint")),
 
+        // ===== 状态与动作：最常用，放最上面 =====
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.enable")),
           h("button", { type: "button", style: SS.toggleTrack(enabled), onClick: function () { toggleEnabled(!enabled); }, disabled: busy, "aria-pressed": enabled },
             h("span", { style: SS.toggleThumb(enabled) })),
           h("span", { style: SS.muted }, enabled ? tt(t, "settings.on") : tt(t, "settings.off"))),
-        h("p", { style: SS.muted }, tt(t, "settings.shortcutHint")),
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.minimalDisplay")),
           h("button", {
             type: "button", style: dim(SS.toggleTrack(minimalDisplay), !enabled || busy), disabled: !enabled || busy,
             "data-prompt-predict-minimal-display": "true", "aria-pressed": minimalDisplay,
             "aria-label": tt(t, "settings.minimalDisplay"), "aria-describedby": minimalDisplayHintId,
-            onClick: function () { setMinimalDisplay(!minimalDisplay); },
+            onClick: function () { var v = !minimalDisplay; setMinimalDisplay(v); applyPatch({ minimalDisplay: v }); },
           }, h("span", { style: SS.toggleThumb(minimalDisplay) })),
           h("span", { id: minimalDisplayHintId, style: SS.hintInline }, tt(t, "settings.minimalDisplayHint"))),
+        h("div", { style: SS.row },
+          h("span", { style: SS.label }, tt(t, "settings.pause")),
+          h("button", {
+            type: "button", style: dim(Object.assign({}, SS.btnGhost, { whiteSpace: "nowrap" }), busy), disabled: busy,
+            "data-prompt-predict-pause": "true", "aria-pressed": Boolean(pauseState),
+            onClick: togglePause,
+          }, pauseState
+            ? tt(t, "settings.pauseResume")
+            : tt(t, "settings.pauseStart", { minutes: 10 })),
+          h(InfoHint, {
+            text: pauseState
+              ? tt(t, "settings.pauseLeft", { time: formatLeft(pauseState - Date.now()) })
+              : tt(t, "settings.pauseHint", { minutes: 10 }),
+            full: tt(t, "settings.pauseHintFull"),
+          })),
 
-        h("div", { style: SS.divider }),
+        // ===== 模型与生成 =====
+        h("div", { style: SS.sectionHead }, h("span", { style: SS.sectionLabel }, tt(t, "settings.predictionSection"))),
 
         h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.provider")),
@@ -2936,7 +2827,8 @@ window.__ModuleLoader__.load({
               setProvider(p);
               if (p === "auto") { setModel("auto"); }
               else { var ms = modelsOf(p); setModel(ms.length ? ms[0].id : ""); }
-              setEffort("auto"); setDirty(true);
+              setEffort("auto");
+              applyPatch({ provider: p, model: p === "auto" ? "auto" : (modelsOf(p).length ? modelsOf(p)[0].id : ""), reasoningEffort: "auto" });
             },
           },
             h("option", { value: "auto" }, tt(t, "settings.followSession")),
@@ -2953,7 +2845,7 @@ window.__ModuleLoader__.load({
           h("span", { style: SS.label }, tt(t, "settings.model")),
           h("select", {
             style: SS.select, value: model, disabled: !enabled || busy || provider === "auto", "aria-label": tt(t, "settings.model"),
-            onChange: function (e) { setModel(e.target.value); setEffort("auto"); setDirty(true); },
+            onChange: function (e) { setModel(e.target.value); setEffort("auto"); applyPatch({ model: e.target.value, reasoningEffort: "auto" }); },
           },
             provider === "auto"
               ? h("option", { value: "auto" }, tt(t, "settings.followSession"))
@@ -2975,7 +2867,6 @@ window.__ModuleLoader__.load({
             : null;
         })(),
 
-        h("p", { style: SS.muted }, tt(t, "settings.predictionSection")),
         h("div", { style: SS.row },
         h("span", { style: SS.label }, tt(t, "settings.suggestionLanguage")),
         h("select", {
@@ -2986,8 +2877,9 @@ window.__ModuleLoader__.load({
               if (next === MORE_LANGUAGES) { setLanguagesExpanded(true); return; }   // 只展开，不改选择
               var variants = familyVariants(next);
               var keep = variants.some(function (item) { return item[0] === suggestionLanguage; });
-              setSuggestionLanguage(variants.length > 1 ? (keep ? suggestionLanguage : variants[0][0]) : next);
-              setDirty(true);
+              var resolved = variants.length > 1 ? (keep ? suggestionLanguage : variants[0][0]) : next;
+              setSuggestionLanguage(resolved);
+              applyPatch({ suggestionLanguage: resolved });
             },
           },
             (function () {
@@ -3018,23 +2910,18 @@ window.__ModuleLoader__.load({
               value: current, disabled: !enabled || busy,
               "data-prompt-predict-language-region": "true",
               title: tt(t, "settings.languageRegion"),
-              onChange: function (e) { setSuggestionLanguage(e.target.value); setDirty(true); },
+              onChange: function (e) { setSuggestionLanguage(e.target.value); applyPatch({ suggestionLanguage: e.target.value }); },
             }, variants.map(function (item) {
               return h("option", { key: item[0], value: item[0] }, regionLabel(item[0], languageFamily(suggestionLanguage), t));
             }));
           })(),
           h(InfoHint, { text: tt(t, "settings.suggestionLanguageHint"), full: tt(t, "settings.suggestionLanguageHintFull") })),
         h("div", { style: SS.row },
-          h("span", { style: SS.label }, tt(t, "settings.outputChars")),
-          h("input", { style: SS.input, type: "number", min: 20, max: 400, step: 10, value: outputChars, disabled: !enabled || busy, "data-prompt-predict-chars": "true", "aria-label": tt(t, "settings.outputChars"), onChange: function (e) { setOutputChars(Number(e.target.value)); setDirty(true); } }),
-          h(InfoHint, { text: tt(t, "settings.outputCharsHint") + wordHint(suggestionLanguage, outputChars, t), full: tt(t, "settings.outputCharsHintFull") })),
-
-        h("div", { style: SS.row },
           h("span", { style: SS.label }, tt(t, "settings.multiline")),
           h("button", {
             type: "button", style: dim(SS.toggleTrack(multiline), !enabled || busy), disabled: !enabled || busy,
             "data-prompt-predict-multiline": "true", "aria-pressed": multiline,
-            onClick: function () { setMultiline(!multiline); setDirty(true); },
+            onClick: function () { var v = !multiline; setMultiline(v); applyPatch({ multilineSuggestions: v }); },
           }, h("span", { style: SS.toggleThumb(multiline) })),
           h("span", { style: SS.hintInline }, tt(t, "settings.multilineHint"))),
 
@@ -3043,7 +2930,7 @@ window.__ModuleLoader__.load({
           h("button", {
             type: "button", style: dim(SS.toggleTrack(switchEnabled), !enabled || busy), disabled: !enabled || busy,
             "data-prompt-predict-switch": "true", "aria-pressed": switchEnabled,
-            onClick: function () { setSwitchEnabled(!switchEnabled); setDirty(true); },
+            onClick: function () { var v = !switchEnabled; setSwitchEnabled(v); applyPatch({ switchEnabled: v }); },
           }, h("span", { style: SS.toggleThumb(switchEnabled) })),
           h("span", { style: SS.hintInline }, tt(t, "settings.switchEnabledHint"))),
 
@@ -3054,7 +2941,7 @@ window.__ModuleLoader__.load({
               style: SS.input, type: "number", min: 0, max: 10, step: 1, value: switchLimit,
               disabled: !enabled || busy,
               "data-prompt-predict-switch-limit": "true", "aria-label": tt(t, "settings.switchLimit"),
-              onChange: function (e) { setSwitchLimit(Number(e.target.value)); setDirty(true); },
+              onChange: function (e) { var v = Number(e.target.value); setSwitchLimit(v); applyPatch({ switchLimit: v }); },
             }),
             h("span", { style: SS.hintInline }, tt(t, "settings.switchLimitHint")))
           : null,
@@ -3079,26 +2966,31 @@ window.__ModuleLoader__.load({
         adv ? h("div", null,
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.timeout")),
-            h("input", { style: SS.input, type: "number", min: 1, max: 60, value: timeoutSec, "aria-label": tt(t, "settings.timeout"), disabled: !enabled || busy, onChange: function (e) { setTimeoutSec(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 1, max: 60, value: timeoutSec, "aria-label": tt(t, "settings.timeout"), disabled: !enabled || busy, onChange: function (e) { var v = Number(e.target.value); setTimeoutSec(v); applyPatch({ timeoutMs: v * 1000 }); } }),
             h("span", { style: SS.muted }, tt(t, "settings.timeoutUnit"))),
           h("div", { style: SS.row },
+            h("span", { style: SS.label }, tt(t, "settings.outputChars")),
+            h("input", { style: SS.input, type: "number", min: 20, max: 400, step: 10, value: outputChars, disabled: !enabled || busy, "data-prompt-predict-chars": "true", "aria-label": tt(t, "settings.outputChars"), onChange: function (e) { var v = Number(e.target.value); setOutputChars(v); applyPatch({ outputChars: v }); } }),
+            h(InfoHint, { text: tt(t, "settings.outputCharsHint") + wordHint(suggestionLanguage, outputChars, t), full: tt(t, "settings.outputCharsHintFull") })),
+
+          h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.contextSize")),
-            h("select", { style: SS.select, value: ctxSize, disabled: !enabled || busy, "aria-label": tt(t, "settings.contextSize"), onChange: function (e) { setCtxSize(Number(e.target.value)); setDirty(true); } },
+            h("select", { style: SS.select, value: ctxSize, disabled: !enabled || busy, "aria-label": tt(t, "settings.contextSize"), onChange: function (e) { var v = Number(e.target.value); setCtxSize(v); applyPatch({ maxMessages: v }); } },
               h("option", { value: 3 }, tt(t, "settings.contextSmall")),
               h("option", { value: 8 }, tt(t, "settings.contextStandard")),
               h("option", { value: 12 }, tt(t, "settings.contextLarge"))),
             h("span", { style: SS.muted }, tt(t, "settings.contextHint"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.maxChars")),
-            h("input", { style: SS.input, type: "number", min: 1000, max: 20000, step: 500, value: maxChars, "aria-label": tt(t, "settings.maxChars"), disabled: !enabled || busy, onChange: function (e) { setMaxChars(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 1000, max: 20000, step: 500, value: maxChars, "aria-label": tt(t, "settings.maxChars"), disabled: !enabled || busy, onChange: function (e) { var v = Number(e.target.value); setMaxChars(v); applyPatch({ maxChars: v }); } }),
             h("span", { style: SS.muted }, tt(t, "settings.maxCharsHint"))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.historySize")),
-            h("input", { style: SS.input, type: "number", min: 0, max: 50, step: 1, value: historySize, "aria-label": tt(t, "settings.historySize"), disabled: !enabled || busy, onChange: function (e) { setHistorySize(Number(e.target.value)); setDirty(true); } }),
+            h("input", { style: SS.input, type: "number", min: 0, max: 50, step: 1, value: historySize, "aria-label": tt(t, "settings.historySize"), disabled: !enabled || busy, onChange: function (e) { var v = Number(e.target.value); setHistorySize(v); applyPatch({ historySize: v }); } }),
             h("span", { style: SS.muted }, tt(t, "settings.historySizeHint", { storage: tt(t, storagePlatformKey()) }))),
           h("div", { style: SS.row },
             h("span", { style: SS.label }, tt(t, "settings.effort")),
-            h("select", { style: SS.select, value: effort, disabled: !enabled || busy, "aria-label": tt(t, "settings.effort"), onChange: function (e) { setEffort(e.target.value); setDirty(true); } },
+            h("select", { style: SS.select, value: effort, disabled: !enabled || busy, "aria-label": tt(t, "settings.effort"), onChange: function (e) { setEffort(e.target.value); applyPatch({ reasoningEffort: e.target.value }); } },
               h("option", { value: "auto" }, effortOptions.length === 0 ? tt(t, "settings.effortDefaultNoLevels") : tt(t, "settings.effortDefault")),
               (function () {
                 var ids = effortOptions.slice();
@@ -3110,22 +3002,23 @@ window.__ModuleLoader__.load({
             h("span", { style: SS.muted }, effortSourceHint(st, t))) ) : null,
 
         h("div", { style: SS.divider }),
-        h("div", { style: SS.histHead },
-          h("span", { style: SS.sectionTitle, }, tt(t, "settings.historyTitle", { count: history.length, limit: historySize })),
-          history.length > 1
-            ? h("button", {
-              type: "button",
-              style: SS.histToggle,
-              "data-prompt-predict-history-toggle": "true",
-              onClick: function () { setListOpen(!listOpen); },
-            }, (listOpen ? "▾ " : "▸ ") + tt(t, listOpen ? "settings.historyCollapse" : "settings.historyExpand"))
-            : null,
+        // 最近预测默认收成一行：标题 + 条数 + 展开；展开后才出现清空与列表。
+        h("div", { style: SS.summaryRow, "data-prompt-predict-history-summary": "true" },
+          h("span", { style: SS.summaryText }, tt(t, "settings.historyTitle", { count: history.length, limit: historySize })),
+          h("button", {
+            type: "button",
+            style: SS.histToggle,
+            "data-prompt-predict-history-toggle": "true",
+            "aria-expanded": listOpen,
+            onClick: function () { setListOpen(!listOpen); },
+          }, (listOpen ? "▾ " : "▸ ") + tt(t, listOpen ? "settings.historyCollapse" : "settings.historyExpand")),
           history.length
             ? h("button", {
               type: "button", style: SS.histToggle, "data-prompt-predict-history-clear": "true",
               onClick: clearHistory,
             }, tt(t, "settings.historyClear"))
             : null),
+        h("div", null, 
         // 真被截断时不用展开「高级」就能看到：直接给可执行的建议
         run && run.truncated
           ? h("p", { style: SS.warnBlock }, tt(t, "settings.truncatedWarn"))
@@ -3189,10 +3082,9 @@ window.__ModuleLoader__.load({
                         : null)
                     : null);
               });
-            })()),
+            })())),
 
         h("div", { style: { display: "flex", flexWrap: "wrap", gap: 10, marginTop: 16 } },
-          h("button", { style: dim(SS.btnPrimary, saveDisabled), onClick: save, disabled: saveDisabled }, busy ? tt(t, "settings.saving") : tt(t, "settings.save")),
           h("button", { style: dim(SS.btnGhost, busy), onClick: resetDefaults, disabled: busy }, tt(t, "settings.reset")),
           h("button", {
             style: dim(SS.btnGhost, busy), disabled: busy, "data-prompt-predict-try": "true",
