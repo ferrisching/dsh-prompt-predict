@@ -178,7 +178,7 @@ pnpm add /path/to/dsh-prompt-predict
 - 点击「保存」后**立即生效**，无需重启 DSH
 - 设置落盘在 `~/.dsh/dsh-prompt-predict/config.json`（权限 600）
 - 优先级：**用户保存的设置 > cordis patch 部署默认 > 内置默认**
-- 待用建议和「最近预测」是两份数据。Host 在当前 DSH profile 下的 `dsh-prompt-predict/pending.json` 为每个会话保留一条选中的建议（或已采纳/忽略标记）、轮次和切换次数，最多 256 个会话。缓存不保存对话原文、草稿或其它候选，也不会上传。把**记录条数**设为 `0` 会清除当前 profile 的磁盘缓存，只能在同一个 Host 进程内恢复；重新开启历史也不会补存关闭期间生成的建议。
+- 待用建议和「最近预测」是两份数据。Host 在当前 DSH profile 下的 `dsh-prompt-predict/pending.json` 为每个会话保留一条选中的建议（或已采纳/忽略标记）、轮次和切换次数，最多 256 个会话。该文件不支持多个 Host 进程并发写入同一 profile。缓存不保存对话原文、草稿或其它候选，也不会上传。把**记录条数**设为 `0` 会清除当前 profile 的磁盘缓存，只能在同一个 Host 进程内恢复；重新开启历史也不会补存关闭期间生成的建议。
 
 ## 🔌 HTTP 接口
 

@@ -964,6 +964,23 @@ check('不带语言头时回落中文', /上下文预算/.test(noHeader.json.rea
   check('改轮前已开跑的旧模型结果不能写入新缓存', stale.code === 'suggestion_stale'
     && newAfterRace.ok === true && !newAfterRace.restored && newAfterRace.round !== edited.round);
 
+  const refreshA = () => post('suggest', { sessionId: a.id, composer: 'manual' });
+  const overlapGate = holdNextStream();
+  const older = refreshA();
+  await overlapGate.started;
+  customText = '对比这两版的输出';
+  const newer = await refreshA();
+  customText = '列出还没跑的测试'; // The older stream ignores cancellation and finishes last.
+  overlapGate.release();
+  const late = await older;
+  const callsAfterOverlap = streamCalls.length;
+  const winner = await auto(a.id);
+  const diskWinner = new Map(JSON.parse(readFileSync(pendingPath, 'utf8')).entries).get(a.id);
+  check('同会话同轮两个请求倒序完成，迟到结果不能覆盖内存或磁盘', newer.ok === true
+    && newer.round === newAfterRace.round && newer.suggestion === '对比这两版的输出' && late.code === 'suggestion_stale'
+    && winner.restored === true && winner.suggestion === newer.suggestion && streamCalls.length === callsAfterOverlap
+    && diskWinner?.suggestion === newer.suggestion);
+
   const dismissGate = holdNextStream();
   const pendingReroll = post('suggest', { sessionId: a.id, composer: 'manual' });
   await dismissGate.started;

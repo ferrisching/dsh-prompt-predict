@@ -10,7 +10,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- **Restore pending suggestions.** Switching sessions or reopening DSH can restore the selected suggestion for the same conversation round without another model call. Accepting or dismissing it prevents automatic restoration for that round. With history turned off, pending suggestions stay in memory only.
+- **Restore pending suggestions.** Switching sessions or reopening DSH can restore the selected suggestion for the same conversation round without another model call. After `Tab` accepts or `Esc` dismisses a suggestion, reloading and clearing the composer will not trigger another automatic prediction. Automatic suggestions resume when the conversation advances. With history turned off, pending suggestions stay in memory only.
 
 ## [0.2.22] — 2026-11-23
 

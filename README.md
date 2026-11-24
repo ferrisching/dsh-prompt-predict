@@ -179,7 +179,7 @@ The bottom of the settings page shows a **recent predictions** list (default 10,
 - Click **Save** to apply changes immediately — no DSH restart
 - Settings are stored at `~/.dsh/dsh-prompt-predict/config.json` (mode 600)
 - Precedence: **user-saved settings > cordis patch deploy defaults > built-in defaults**
-- Pending suggestions are separate from Recent predictions. The Host keeps one selected suggestion (or an accepted/dismissed marker) and its round and switch count per session, up to 256 sessions, in `dsh-prompt-predict/pending.json` under the active DSH profile. The cache stores no transcripts, drafts, or alternate suggestions and is not uploaded. Setting **History size** to `0` clears the profile's disk cache and limits restoration to the current Host process; turning history back on does not save suggestions generated while it was off.
+- Pending suggestions are separate from Recent predictions. The Host keeps one selected suggestion (or an accepted/dismissed marker) and its round and switch count per session, up to 256 sessions, in `dsh-prompt-predict/pending.json` under the active DSH profile. This file supports one Host process per profile, not concurrent writers. The cache stores no transcripts, drafts, or alternate suggestions and is not uploaded. Setting **History size** to `0` clears the profile's disk cache and limits restoration to the current Host process; turning history back on does not save suggestions generated while it was off.
 
 ## 🔌 HTTP API
 
