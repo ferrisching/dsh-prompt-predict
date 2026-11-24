@@ -1932,6 +1932,30 @@ check('设置页列出最近预测（含会话标题）',
   check('焦点在隐藏 composer 时仍选择可见节点', Number(ghost?.props?.style?.top) < 300, String(ghost?.props?.style?.top));
 }
 
+// 灰字自己的按钮可能正好覆盖编辑器的采样点；只忽略这一层，不穿透真正的遮挡。
+{
+  const inst = setup();
+  const { document, editor } = inst.env;
+  const ghostButton = { closest: (sel) => sel === '[data-prompt-predict-ghost]' ? ghostButton : null };
+  const modal = { closest: () => null };
+  let stack = [editor];
+  document.querySelectorAll = (sel) => sel.includes('data-composer-input') ? [editor] : [];
+  document.elementFromPoint = () => stack[0];
+  document.elementsFromPoint = () => stack;
+  const view = mount(inst.react, inst.registered['conversation.composer.dock'].Component, () => makeProps(''));
+  await view.settle(4);
+  const before = suggestCallsOf(inst.env).length;
+  stack = [ghostButton, modal, editor];
+  const down = () => keydown(inst.env, 'ArrowDown', { code: 'ArrowDown', target: editor });
+  const blocked = !down() && suggestCallsOf(inst.env).length === before;
+  stack = [ghostButton, editor];
+  const accepted = down();
+  await view.settle(4);
+  check('灰字按钮下有其它遮挡时，不接管方向键', before === 1 && blocked);
+  check('仅灰字按钮覆盖采样点时，聚焦输入框的 ↓ 仍能重抽', accepted && suggestCallsOf(inst.env).length === before + 1);
+  inst.react.unmount();
+}
+
 // 任意位置新增图片节点都会收起 ghost
 {
   const inst = setup();

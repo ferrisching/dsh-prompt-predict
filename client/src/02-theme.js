@@ -229,6 +229,14 @@
           var x = Math.min(Math.max(r.left + r.width / 2, 0), (window.innerWidth || 1200) - 1);
           var y = Math.min(Math.max(r.top + Math.min(r.height / 2, 20), 0), (window.innerHeight || 800) - 1);
           var hit = document.elementFromPoint(x, y);
+          // A clickable ghost control can cover our sample point. Inspect the first
+          // underlying layer; a dialog or another pane must still block the editor.
+          if (hit && hit.closest && hit.closest('[data-prompt-predict-ghost]') && typeof document.elementsFromPoint === "function") {
+            hit = document.elementsFromPoint(x, y).find(function (node) {
+              return !(node.closest && node.closest('[data-prompt-predict-ghost]'));
+            });
+            if (!hit) return false;
+          }
           if (hit && hit !== el && !(el.contains && el.contains(hit)) && !(hit.contains && hit.contains(el))) return false;
         }
       } catch { return false; }
